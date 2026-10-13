@@ -479,10 +479,13 @@ mod tests {
     }
 
     fn ready(app: &mut App) {
-        app.handle_msg(Msg::Identity(Ok(CallerIdentity {
-            account: "123456789012".into(),
-            arn: "arn:aws:sts::123456789012:assumed-role/Dev/me".into(),
-        })));
+        app.handle_msg(Msg::Identity {
+            generation: 1,
+            result: Ok(CallerIdentity {
+                account: "123456789012".into(),
+                arn: "arn:aws:sts::123456789012:assumed-role/Dev/me".into(),
+            }),
+        });
     }
 
     #[test]
@@ -508,11 +511,14 @@ mod tests {
             press(&mut app, KeyCode::Char(c));
         }
         press(&mut app, KeyCode::Enter);
-        app.handle_msg(Msg::Identity(Err(AwsError::new(
-            ErrorKind::SsoExpired,
-            None,
-            "the SSO token has expired and cannot be refreshed",
-        ))));
+        app.handle_msg(Msg::Identity {
+            generation: 1,
+            result: Err(AwsError::new(
+                ErrorKind::SsoExpired,
+                None,
+                "the SSO token has expired and cannot be refreshed",
+            )),
+        });
         insta::assert_snapshot!(render(&app));
     }
 

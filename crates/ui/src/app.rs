@@ -42,7 +42,11 @@ const PAGE_JUMP: isize = 20;
 /// Work for the runtime. Loads run against the app's current profile and region.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
-    LoadIdentity,
+    /// Check the credentials. Runs apart from other loads: `CancelLoads` doesn't
+    /// stop it; only a newer identity check replaces it.
+    LoadIdentity {
+        generation: u64,
+    },
     LoadList {
         generation: u64,
     },
@@ -50,7 +54,7 @@ pub enum Effect {
         generation: u64,
         id: String,
     },
-    /// Abort every running load (the view or context changed).
+    /// Abort every running list and detail load (the view or context changed).
     CancelLoads,
     /// Suspend the TUI and run this command (SSO login) in the terminal.
     RunInTerminal(Vec<String>),
@@ -60,7 +64,10 @@ pub enum Effect {
 /// Results coming back from the runtime.
 #[derive(Debug)]
 pub enum Msg {
-    Identity(Result<CallerIdentity, AwsError>),
+    Identity {
+        generation: u64,
+        result: Result<CallerIdentity, AwsError>,
+    },
     Page {
         generation: u64,
         result: Result<Page, AwsError>,
@@ -120,6 +127,8 @@ pub struct App {
     pub flash: Option<String>,
     pub should_quit: bool,
     next_generation: u64,
+    /// The identity check whose result is wanted; older results are ignored.
+    identity_generation: u64,
 }
 
 impl App {
@@ -143,10 +152,14 @@ impl App {
             flash: None,
             should_quit: false,
             next_generation: 2,
+            identity_generation: 1,
         };
         (
             app,
-            vec![Effect::LoadIdentity, Effect::LoadList { generation: 1 }],
+            vec![
+                Effect::LoadIdentity { generation: 1 },
+                Effect::LoadList { generation: 1 },
+            ],
         )
     }
 
@@ -191,7 +204,7 @@ impl App {
 
     pub fn handle_msg(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
-            Msg::Identity(result) => {
+            Msg::Identity { generation, result } if generation == self.identity_generation => {
                 self.identity = match result {
                     Ok(id) => IdentityState::Ready(id),
                     Err(e) => IdentityState::Failed(e),
@@ -222,7 +235,8 @@ impl App {
                 }
                 return self.reload_context(true);
             }
-            Msg::Page { .. } => {} // from a load that was replaced
+            // From a load that was replaced.
+            Msg::Identity { .. } | Msg::Page { .. } => {}
         }
         Vec::new()
     }
@@ -481,8 +495,11 @@ impl App {
         self.screen = Screen::List;
         let mut effects = vec![Effect::CancelLoads];
         if identity_too {
+            self.identity_generation += 1;
             self.identity = IdentityState::Loading;
-            effects.push(Effect::LoadIdentity);
+            effects.push(Effect::LoadIdentity {
+                generation: self.identity_generation,
+            });
         }
         effects.push(Effect::LoadList { generation });
         effects
@@ -552,7 +569,10 @@ pub(crate) mod tests {
         );
         assert_eq!(
             effects,
-            [Effect::LoadIdentity, Effect::LoadList { generation: 1 }]
+            [
+                Effect::LoadIdentity { generation: 1 },
+                Effect::LoadList { generation: 1 }
+            ]
         );
         app.handle_msg(Msg::Page {
             generation: 1,
@@ -667,7 +687,7 @@ pub(crate) mod tests {
             effects,
             [
                 Effect::CancelLoads,
-                Effect::LoadIdentity,
+                Effect::LoadIdentity { generation: 2 },
                 Effect::LoadList { generation: 2 }
             ]
         );
@@ -691,11 +711,14 @@ pub(crate) mod tests {
     #[test]
     fn login_runs_the_session_command_and_reloads_after() {
         let mut app = app();
-        app.handle_msg(Msg::Identity(Err(AwsError::new(
-            ErrorKind::SsoExpired,
-            None,
-            "the SSO token has expired",
-        ))));
+        app.handle_msg(Msg::Identity {
+            generation: 1,
+            result: Err(AwsError::new(
+                ErrorKind::SsoExpired,
+                None,
+                "the SSO token has expired",
+            )),
+        });
         assert!(app.login_would_help());
         let effects = press(&mut app, "L");
         assert_eq!(
@@ -711,10 +734,48 @@ pub(crate) mod tests {
             effects,
             [
                 Effect::CancelLoads,
-                Effect::LoadIdentity,
+                Effect::LoadIdentity { generation: 2 },
                 Effect::LoadList { generation: 2 }
             ]
         );
+    }
+
+    #[test]
+    fn a_stale_identity_result_is_ignored_after_a_profile_switch() {
+        let mut app = app();
+        press(&mut app, "Pjj");
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.profile, "ci");
+        // The check started for acme-dev finishes late.
+        app.handle_msg(Msg::Identity {
+            generation: 1,
+            result: Ok(CallerIdentity {
+                account: "111".into(),
+                arn: "arn".into(),
+            }),
+        });
+        assert_eq!(app.identity, IdentityState::Loading);
+    }
+
+    #[test]
+    fn refresh_and_region_switch_leave_the_identity_check_running() {
+        let mut app = app();
+        let mut effects = press(&mut app, "r");
+        effects.extend(press(&mut app, "Rj"));
+        effects.extend(app.handle_key(key(KeyCode::Enter)));
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, Effect::LoadIdentity { .. }))
+        );
+        app.handle_msg(Msg::Identity {
+            generation: 1,
+            result: Ok(CallerIdentity {
+                account: "111".into(),
+                arn: "arn".into(),
+            }),
+        });
+        assert!(matches!(app.identity, IdentityState::Ready(_)));
     }
 
     #[test]

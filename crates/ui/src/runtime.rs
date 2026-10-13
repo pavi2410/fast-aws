@@ -12,7 +12,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use ratatui::crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 use ratatui::crossterm::{ExecutableCommand, cursor};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
-use tokio::task::JoinSet;
+use tokio::task::{AbortHandle, JoinSet};
 
 use crate::app::{App, Effect, Msg};
 use crate::render;
@@ -33,6 +33,8 @@ pub async fn run(
     let (tx, mut rx) = unbounded_channel();
     let input = InputThread::spawn(tx.clone());
     let mut loads = JoinSet::new();
+    // Kept apart from `loads` so `CancelLoads` never stops the credentials check.
+    let mut identity: Option<AbortHandle> = None;
 
     let mut pending = initial;
     'main: loop {
@@ -40,13 +42,17 @@ pub async fn run(
             match effect {
                 Effect::Quit => break 'main,
                 Effect::CancelLoads => loads.abort_all(),
-                Effect::LoadIdentity => {
+                Effect::LoadIdentity { generation } => {
                     let (factory, tx) = (factory.clone(), tx.clone());
                     let (profile, region) = (app.profile.clone(), app.region.clone());
-                    loads.spawn(async move {
+                    let task = tokio::spawn(async move {
                         let ctx = factory.ctx(&profile, &region).await;
-                        let _ = tx.send(Input::Msg(Msg::Identity(caller_identity(&ctx).await)));
+                        let result = caller_identity(&ctx).await;
+                        let _ = tx.send(Input::Msg(Msg::Identity { generation, result }));
                     });
+                    if let Some(old) = identity.replace(task.abort_handle()) {
+                        old.abort();
+                    }
                 }
                 Effect::LoadList { generation } => {
                     let (factory, kind) = (factory.clone(), app.list.kind.clone());
@@ -95,6 +101,9 @@ pub async fn run(
     }
 
     loads.abort_all();
+    if let Some(task) = identity {
+        task.abort();
+    }
     input.stop();
     ratatui::restore();
     Ok(())
