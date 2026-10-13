@@ -53,6 +53,15 @@ The same keys work for every resource type. Service docs only list *extra* keys.
 | `:unlock` | Allow mutating actions on a prod profile for this session |
 | `?` | Help for the current view |
 
+Keys some rows offer (shown in each view's help):
+
+| Key | Where | Meaning |
+|---|---|---|
+| `S` | IAM role or user | Simulate actions (`SimulatePrincipalPolicy`) |
+| `I` | Log group | Logs Insights query (billed per GB scanned) |
+| `Q` | DynamoDB table | Query items by partition key |
+| `v` | Secret | Reveal the value (type `reveal` to confirm) |
+
 Service docs may list a key from this table to say what it does in that view (such as
 `e` editing env vars in Lambda), but never give it a different meaning.
 

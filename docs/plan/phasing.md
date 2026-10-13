@@ -48,15 +48,27 @@ special views. Done so far:
   (buses → rules, Scheduler schedules), Cognito (user pools → users, identity
   pools), SES (account, identities), Cost Explorer (month to date by service).
 
-Still open from Phases 2 and 3:
-- the cache
-- sparklines and metric charts
-- live tail and Insights
-- the Miller-column browser
-- the DynamoDB item explorer
-- the IAM effective-permissions view and simulator
-- relations (`g`)
-- revealing secrets
+Phases 2 and 3, done since (same day):
+- read-only mode (`--read-only`, per-profile `read_only` / `prod` in
+  `~/.config/fast-aws/config.toml`, `:unlock`)
+- the in-memory cache (keyed by profile), with stale-while-revalidate
+- relations (`g`), including reverse ones found in loaded lists
+- the IAM effective-permissions view (Enter on a role or user) and simulator (`S`)
+- Logs Insights (`I` on a log group) and following a log group live (`g` →
+  follow live; it polls `FilterLogEvents` instead of the billed Live Tail)
+- the DynamoDB item explorer (`Q`, Query only)
+- revealing a secret (`v`, then type `reveal`)
+- sparklines (Lambda errors, EC2 and RDS CPU; `--no-metrics` turns them off)
+
+Billed or data-reading features (sparklines, Insights, the log tail, DynamoDB
+items, secret values) have been tested against mocks only so far.
+
+Still open:
+- the three-column Miller browser (S3 folder drill-in covers browsing for now)
+- metric charts beyond sparklines, and alarm history charts
+- clipboard (`y`/`Y`) and the copy-CLI-command key (`c`)
+- Phase 4 (actions): paused until the user decides; the user has asked that
+  no mutating calls be made
 
 ## Phase 2: Read-only core (the daily drivers)
 
