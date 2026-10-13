@@ -89,6 +89,26 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     ];
     spans.extend(session);
     spans.extend([sep(), account, sep(), Span::raw(app.region.clone())]);
+    if app.guard.prod {
+        let text = if app.guard.unlocked {
+            " PROD · unlocked "
+        } else {
+            " PROD "
+        };
+        spans.extend([
+            Span::raw(" "),
+            Span::styled(text, Style::new().fg(Color::White).bg(Color::Red).bold()),
+        ]);
+    }
+    if app.guard.read_only {
+        spans.extend([
+            Span::raw(" "),
+            Span::styled(
+                " read-only ",
+                Style::new().fg(Color::Black).bg(Color::Green),
+            ),
+        ]);
+    }
     let right = Line::from(vec![Span::styled("  ? ", KEY), Span::styled("help ", DIM)]);
     draw_split(frame, area, Line::from(spans), right);
 }
@@ -478,6 +498,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         ("n", "load more (lists stop after 5 pages)"),
         ("P / R", "switch profile / region"),
         ("L", "SSO login for this profile"),
+        (":unlock", "allow actions on a prod profile (this session)"),
         ("esc / q", "back · q quits at the top level"),
         ("ctrl-c", "quit"),
     ];
@@ -655,6 +676,19 @@ mod tests {
         press(&mut app, KeyCode::Char(':'));
         press(&mut app, KeyCode::Char('t'));
         insta::assert_snapshot!(render(&app));
+    }
+
+    #[test]
+    fn header_badges_for_read_only_and_prod() {
+        let mut app = app();
+        ready(&mut app);
+        app.set_safety(
+            toml::from_str("[profiles.acme-dev]\nprod = true\nread_only = true").unwrap(),
+            false,
+        );
+        let mut terminal = Terminal::new(TestBackend::new(90, 3)).unwrap();
+        terminal.draw(|f| draw(f, &app)).unwrap();
+        insta::assert_snapshot!(terminal.backend().to_string());
     }
 
     #[test]

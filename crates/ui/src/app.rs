@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use fast_aws_core::profiles::{ProfileCatalog, ProfileInfo};
 use fast_aws_core::{
-    AwsError, CallerIdentity, Detail, ErrorKind, Page, Registry, ResourceKind, Scope,
+    AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Registry, ResourceKind, Scope,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -139,6 +139,10 @@ pub struct App {
     /// A one-line message in the footer, cleared by the next key.
     pub flash: Option<String>,
     pub should_quit: bool,
+    /// Which action classes the current profile allows; see [`Guard`].
+    pub guard: Guard,
+    config: Config,
+    read_only_flag: bool,
     next_generation: u64,
     /// The identity check whose result is wanted; older results are ignored.
     identity_generation: u64,
@@ -165,6 +169,9 @@ impl App {
             overlay: Overlay::None,
             flash: None,
             should_quit: false,
+            guard: Guard::new(&Config::default(), "", false),
+            config: Config::default(),
+            read_only_flag: false,
             next_generation: 2,
             identity_generation: 1,
         };
@@ -178,6 +185,14 @@ impl App {
                 },
             ],
         )
+    }
+
+    /// Applies the config file and `--read-only` to the current profile and to
+    /// every profile switched to later.
+    pub fn set_safety(&mut self, config: Config, read_only_flag: bool) {
+        self.config = config;
+        self.read_only_flag = read_only_flag;
+        self.guard = Guard::new(&self.config, &self.profile, read_only_flag);
     }
 
     fn generation(&mut self) -> u64 {
@@ -495,6 +510,15 @@ impl App {
             self.should_quit = true;
             return vec![Effect::Quit];
         }
+        if command == "unlock" {
+            self.flash = Some(if self.guard.prod {
+                self.guard.unlocked = true;
+                format!("{} unlocked for this session", self.profile)
+            } else {
+                format!("{} isn't marked prod; nothing to unlock", self.profile)
+            });
+            return Vec::new();
+        }
         let Some(kind) = self.registry.search(command).into_iter().nth(at) else {
             if !command.is_empty() {
                 self.flash = Some(format!("unknown resource type: {command}"));
@@ -557,6 +581,8 @@ impl App {
                     && *name != self.profile
                 {
                     self.profile = name.clone();
+                    // A new profile starts locked, with its own settings.
+                    self.guard = Guard::new(&self.config, &self.profile, self.read_only_flag);
                     if let Some(region) = self.current_profile().and_then(|p| p.region.clone()) {
                         self.region = region;
                     }
@@ -1097,6 +1123,49 @@ pub(crate) mod tests {
             }),
         });
         assert!(matches!(app.identity, IdentityState::Ready(_)));
+    }
+
+    fn safety_config() -> Config {
+        toml::from_str("[profiles.ci]\nread_only = true\n[profiles.acme-qa]\nprod = true\n")
+            .unwrap()
+    }
+
+    #[test]
+    fn the_guard_follows_the_profile() {
+        let mut app = app();
+        app.set_safety(safety_config(), false);
+        assert!(!app.guard.read_only && !app.guard.prod);
+        press(&mut app, "Pjj"); // ci
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.guard.read_only);
+        let mut app = super::tests::app();
+        app.set_safety(safety_config(), true);
+        assert!(app.guard.read_only, "--read-only applies to every profile");
+    }
+
+    #[test]
+    fn unlock_only_applies_to_prod_and_ends_with_the_profile() {
+        let mut app = app();
+        app.set_safety(safety_config(), false);
+        press(&mut app, ":unlock");
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.flash.as_deref().unwrap().contains("nothing to unlock"));
+
+        press(&mut app, "Pj"); // acme-qa, marked prod
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.guard.prod && !app.guard.unlocked);
+        press(&mut app, ":unlock");
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.guard.unlocked);
+
+        press(&mut app, "Pk"); // back to acme-dev, then to acme-qa again
+        app.handle_key(key(KeyCode::Enter));
+        press(&mut app, "Pj");
+        app.handle_key(key(KeyCode::Enter));
+        assert!(
+            !app.guard.unlocked,
+            "unlocking lasts only while on that profile"
+        );
     }
 
     #[test]
