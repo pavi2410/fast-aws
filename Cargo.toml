@@ -57,8 +57,10 @@ aws-smithy-types = "1.8"
 aws-types = "1.3"
 insta = "1.49"
 ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
+toml = "1"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
 
 [workspace.lints.rust]

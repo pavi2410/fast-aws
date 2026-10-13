@@ -14,9 +14,11 @@ aws-sdk-sts.workspace = true
 aws-types.workspace = true
 aws-smithy-runtime-api.workspace = true
 aws-smithy-types.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true
