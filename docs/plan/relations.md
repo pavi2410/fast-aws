@@ -64,7 +64,7 @@ v1, so these show the key ARN/alias without a jump.)
   - `Arn`
   - `Filter`: a list query on the target kind, e.g. `:fn /role=arn:…`
   - `Lazy`: an async resolver for kinds A and C
-- **C**-type relations read from the shared cache, so they don't add API calls. This
-  is why the cache key includes account and region.
+- **C**-type relations read from the shared cache, so they don't add API calls. They
+  only read entries for the current profile and region.
 - The `g` menu shows the resolution method as a dim tag (`inferred`, `partial`), so
   users know how far to trust it.

@@ -169,7 +169,9 @@ UI thread (ratatui draw + input) ──Cmd──▶ dispatcher ──spawn──
 
 ## Cache (stale-while-revalidate)
 
-- Key: `(account, region, kind, parent, query)`.
+- Key: `(profile, region, kind, parent)`. Profile, not account: two profiles on
+  one account can have different permissions (`generex-qa` vs `generex-qa-ro`), and
+  one must never be shown data only the other can read.
 - Show cached rows instantly (marked *stale* in the header), refresh in the
   background, then swap in the result while keeping the cursor on the same ID.
 - In memory by default. Disk-backed for expensive or slow data: Cost Explorer,
