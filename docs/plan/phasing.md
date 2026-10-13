@@ -42,9 +42,13 @@ These four account for most console visits, and Lambda depends on Logs.
 - `g` relations for kinds F and N among these services
 - `c` copies the CLI command
 
-**Exit:** relation chains 1 (once API GW lands), 2 (once IAM lands) and 4 from
-[relations](relations.md#most-valuable-chains-used-as-acceptance-tests-in-phasing)
-work. A week of daily use without opening the console for these services.
+**Exit:**
+- Relation chain 4 (alarm → resource → metrics + logs) from
+  [relations](relations.md#most-valuable-chains-used-as-acceptance-tests-in-phasing)
+  works.
+- The Lambda → log pane (filtered to `ERROR`) part of chain 1 works. The API GW part
+  waits for Phase 3.
+- A week of daily use without opening the console for these services.
 
 ## Phase 3: Read-only breadth
 
