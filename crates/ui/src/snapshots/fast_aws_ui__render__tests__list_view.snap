@@ -13,4 +13,4 @@ expression: render(&app)
 "                                                                "
 "                                                                "
 "                                                                "
-" : jump  / filter  enter open  d describe  r refresh  P profile "
+" : jump  / filter  enter open  d describe  g go to  r refresh  P"

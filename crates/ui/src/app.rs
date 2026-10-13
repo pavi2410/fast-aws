@@ -116,6 +116,8 @@ pub enum Overlay {
     Profiles(usize),
     /// `R`: index into [`REGIONS`].
     Regions(usize),
+    /// `g`: index into the selected row's relations.
+    Relations(usize),
     Help,
 }
 
@@ -293,6 +295,7 @@ impl App {
             Overlay::Filter => self.filter_key(key),
             Overlay::Profiles(i) => self.profiles_key(key, i),
             Overlay::Regions(i) => self.regions_key(key, i),
+            Overlay::Relations(i) => self.relations_key(key, i),
             Overlay::Help => {
                 self.overlay = Overlay::None;
                 Vec::new()
@@ -337,6 +340,13 @@ impl App {
                 Vec::new()
             }
             KeyCode::Char('L') => self.login(),
+            KeyCode::Char('g') => {
+                match self.list.selected_row().map(|r| r.relations.len()) {
+                    Some(n) if n > 0 => self.overlay = Overlay::Relations(0),
+                    _ => self.flash = Some("nothing related to go to from here".into()),
+                }
+                Vec::new()
+            }
             _ => return None,
         };
         Some(effects)
@@ -628,6 +638,49 @@ impl App {
             _ => {}
         }
         Vec::new()
+    }
+
+    fn relations_key(&mut self, key: KeyEvent, at: usize) -> Vec<Effect> {
+        let count = self.list.selected_row().map_or(0, |r| r.relations.len());
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.overlay = Overlay::None,
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.overlay = Overlay::Relations((at + 1).min(count.saturating_sub(1)));
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.overlay = Overlay::Relations(at.saturating_sub(1))
+            }
+            KeyCode::Enter => {
+                self.overlay = Overlay::None;
+                return self.follow(at);
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    /// Jumps to the selected row's `at`-th relation. The current list goes on
+    /// the back stack, so `Esc` returns to it.
+    fn follow(&mut self, at: usize) -> Vec<Effect> {
+        let Some(relation) = self
+            .list
+            .selected_row()
+            .and_then(|r| r.relations.get(at))
+            .cloned()
+        else {
+            return Vec::new();
+        };
+        let Some(kind) = self.registry.get(relation.kind) else {
+            self.flash = Some(format!("{} isn't available in this build", relation.kind));
+            return Vec::new();
+        };
+        let (mut list, load) = self.list_for(kind, relation.parent);
+        if let Some(filter) = &relation.filter {
+            list.set_filter(filter);
+        }
+        self.back.push(std::mem::replace(&mut self.list, list));
+        self.screen = Screen::List;
+        std::iter::once(Effect::CancelLoads).chain(load).collect()
     }
 
     fn regions_key(&mut self, key: KeyEvent, at: usize) -> Vec<Effect> {
@@ -1030,6 +1083,46 @@ pub(crate) mod tests {
         press(&mut app, "Pj"); // acme-qa
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.list.total(), 0);
+    }
+
+    #[test]
+    fn g_jumps_to_a_related_resource_and_esc_comes_back() {
+        let mut app = empty_app();
+        app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![
+                    row("a", "web-1")
+                        .relate("part bolt", "fake:part", "bolt")
+                        .relate_inside("parts of web-1", "fake:part", part_parent()),
+                ],
+                next: None,
+            }),
+        });
+        press(&mut app, "g");
+        assert_eq!(app.overlay, Overlay::Relations(0));
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert_eq!(effects[0], Effect::CancelLoads);
+        assert_eq!(app.list.kind.id(), "fake:part");
+        assert_eq!(app.list.filter, "bolt");
+        assert_eq!(app.list.parent, None);
+
+        app.handle_key(key(KeyCode::Esc)); // clears the filter first
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.list.kind.id(), "fake:thing");
+
+        press(&mut app, "gj");
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.list.parent, Some(part_parent()));
+    }
+
+    #[test]
+    fn g_without_relations_explains() {
+        let mut app = app();
+        press(&mut app, "j"); // db has none
+        press(&mut app, "g");
+        assert_eq!(app.overlay, Overlay::None);
+        assert!(app.flash.as_deref().unwrap().contains("nothing related"));
     }
 
     #[test]

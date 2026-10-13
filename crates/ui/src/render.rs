@@ -56,6 +56,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Overlay::Palette(input, at) => draw_palette(frame, body, app, input, *at),
         Overlay::Profiles(at) => draw_profiles(frame, body, app, *at),
         Overlay::Regions(at) => draw_regions(frame, body, app, *at),
+        Overlay::Relations(at) => draw_relations(frame, body, app, *at),
         Overlay::Help => draw_help(frame, body),
     }
 }
@@ -373,6 +374,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
                 ("/", "filter"),
                 ("enter", "open"),
                 ("d", "describe"),
+                ("g", "go to"),
                 ("r", "refresh"),
                 ("P", "profile"),
                 ("R", "region"),
@@ -484,6 +486,34 @@ fn draw_profiles(frame: &mut Frame, area: Rect, app: &App, at: usize) {
     );
 }
 
+fn draw_relations(frame: &mut Frame, area: Rect, app: &App, at: usize) {
+    let relations = app
+        .list
+        .selected_row()
+        .map(|r| r.relations.as_slice())
+        .unwrap_or_default();
+    let lines: Vec<Line> = relations
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let title = app
+                .registry
+                .get(r.kind)
+                .map(|k| k.title())
+                .unwrap_or(r.kind);
+            let line = picker_line(r.label.clone(), i == at);
+            let mut spans = line.spans;
+            spans.push(Span::styled(format!("  {title}"), DIM));
+            Line::from(spans).style(line.style)
+        })
+        .collect();
+    let inner = popup(frame, area, 64, lines.len() as u16 + 2, "go to");
+    frame.render_widget(
+        Paragraph::new(lines).scroll((scroll_to(at, inner.height), 0)),
+        inner,
+    );
+}
+
 fn draw_regions(frame: &mut Frame, area: Rect, app: &App, at: usize) {
     let lines: Vec<Line> = REGIONS
         .iter()
@@ -506,6 +536,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         ("/", "filter the list"),
         ("j/k ↑/↓", "move · PgUp/PgDn · Home/End"),
         ("enter", "open: drill in, or describe"),
+        ("g", "go to a related resource"),
         ("d", "describe the selected item"),
         ("tab", "fields / raw (in describe)"),
         ("r", "refresh"),

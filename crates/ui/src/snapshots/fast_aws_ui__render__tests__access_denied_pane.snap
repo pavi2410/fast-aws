@@ -13,4 +13,4 @@ expression: render(&app)
 " │ code: UnauthorizedOperation                                │ "
 " │ detail: You are not authorized to perform this operation.  │ "
 " ╰────────────────────────────────────────────────────────────╯ "
-" : jump  / filter  enter open  d describe  r refresh  P profile "
+" : jump  / filter  enter open  d describe  g go to  r refresh  P"
