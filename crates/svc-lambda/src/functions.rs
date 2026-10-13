@@ -5,6 +5,7 @@ use aws_sdk_lambda::Client;
 use aws_sdk_lambda::types::FunctionConfiguration;
 use fast_aws_core::arn::Arn;
 use fast_aws_core::fmt::{bytes, date_part, or_dash};
+use fast_aws_core::metrics::{MetricSpec, Summary};
 use fast_aws_core::{
     AwsError, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, kind_info,
 };
@@ -19,6 +20,7 @@ const COLUMNS: &[Column] = &[
     Column::fixed("TIMEOUT", 7),
     Column::fixed("CODE", 9),
     Column::fixed("MODIFIED", 10),
+    Column::fixed("ERRORS 24h", 30),
 ];
 
 #[async_trait]
@@ -79,8 +81,21 @@ fn row(f: &FunctionConfiguration) -> Row {
                 .into(),
             bytes(f.code_size()).into(),
             date_part(f.last_modified()).into(),
+            "".into(),
         ],
     )
+    .metric(MetricSpec {
+        namespace: "AWS/Lambda",
+        name: "Errors",
+        dimensions: vec![(
+            "FunctionName",
+            f.function_name().unwrap_or_default().to_owned(),
+        )],
+        stat: "Sum",
+        summary: Summary::Total,
+        unit: "",
+        column: 6,
+    })
 }
 
 /// Environment variables whose names suggest a secret are masked. Revealing
@@ -245,9 +260,12 @@ mod tests {
                 "512 MB",
                 "30s",
                 "2.0 KiB",
-                "2026-10-12"
+                "2026-10-12",
+                ""
             ]
         );
+        let metric = page.rows[0].metric.as_ref().unwrap();
+        assert_eq!((metric.name, metric.column), ("Errors", 6));
     }
 
     #[test]
