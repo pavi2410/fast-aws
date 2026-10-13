@@ -151,7 +151,7 @@ async fn list_rest(
     }
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(Page {
-        rows: rows.into_iter().map(|(_, r)| r).collect(),
+        rows: rows.into_iter().map(|(_, r)| to_function(r)).collect(),
         next: out.position,
     })
 }
@@ -216,9 +216,18 @@ async fn list_v2(client: &V2Client, api: &str, token: Option<String>) -> Result<
         (&a.cells[1].text, &a.cells[0].text).cmp(&(&b.cells[1].text, &b.cells[0].text))
     });
     Ok(Page {
-        rows,
+        rows: rows.into_iter().map(to_function).collect(),
         next: routes.next_token,
     })
+}
+
+/// What `g` offers from a route: the Lambda function it integrates with.
+fn to_function(row: Row) -> Row {
+    let function = row.cells[2].text.strip_prefix("λ ").map(str::to_owned);
+    match function {
+        Some(f) => row.relate(format!("function {f}"), "lambda:function", &f),
+        None => row,
+    }
 }
 
 #[cfg(test)]
@@ -260,6 +269,8 @@ mod tests {
         let cells: Vec<_> = page.rows[0].cells.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(cells, ["GET", "/orders", "λ orders", "NONE"]);
         assert_eq!(page.rows[0].id, "r1 GET");
+        assert_eq!(page.rows[0].relations[0].filter.as_deref(), Some("orders"));
+        assert_eq!(page.rows[0].relations[0].filter.as_deref(), Some("orders"));
     }
 
     #[tokio::test]
