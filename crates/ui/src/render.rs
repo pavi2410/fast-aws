@@ -53,7 +53,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     match &app.overlay {
         Overlay::None | Overlay::Filter => {}
-        Overlay::Palette(input) => draw_palette(frame, body, app, input),
+        Overlay::Palette(input, at) => draw_palette(frame, body, app, input, *at),
         Overlay::Profiles(at) => draw_profiles(frame, body, app, *at),
         Overlay::Regions(at) => draw_regions(frame, body, app, *at),
         Overlay::Help => draw_help(frame, body),
@@ -306,10 +306,11 @@ fn hints(pairs: &[(&'static str, &'static str)]) -> Line<'static> {
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let line = match (&app.overlay, &app.flash) {
-        (Overlay::Palette(input), _) => Line::from(vec![
+        (Overlay::Palette(input, _), _) => Line::from(vec![
             Span::styled(" :", KEY),
             Span::raw(input.clone()),
             Span::styled("▏", Style::new().fg(ACCENT)),
+            Span::styled("   ↑/↓ choose · enter open · esc cancel", DIM),
         ]),
         (Overlay::Filter, _) => Line::from(vec![
             Span::styled(" /", KEY),
@@ -382,32 +383,36 @@ fn scroll_to(at: usize, height: u16) -> u16 {
     (at + 1).saturating_sub(usize::from(height)) as u16
 }
 
-fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str) {
-    let typed = input.trim().to_lowercase();
+fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str, at: usize) {
     let lines: Vec<Line> = app
         .registry
-        .kinds()
+        .search(input)
         .iter()
-        .filter(|k| {
-            typed.is_empty()
-                || k.id().starts_with(&typed)
-                || k.title().to_lowercase().contains(&typed)
-                || k.aliases().iter().any(|a| a.starts_with(&typed))
-        })
-        .map(|k| {
-            Line::from(vec![
-                Span::styled(format!("{:<16}", k.title()), Style::new().bold()),
-                Span::styled(format!(":{}", k.aliases().join("  :")), DIM),
-            ])
+        .enumerate()
+        .map(|(i, k)| {
+            let aliases = format!(":{}", k.aliases().join("  :"));
+            let line = Line::from(vec![
+                Span::raw(if i == at { "▸ " } else { "  " }),
+                Span::styled(format!("{:<24}", k.title()), Style::new().bold()),
+                Span::styled(aliases, DIM),
+            ]);
+            if i == at {
+                line.style(Style::new().bg(Color::DarkGray))
+            } else {
+                line
+            }
         })
         .collect();
-    let inner = popup(frame, area, 50, lines.len().max(1) as u16 + 2, "jump to");
-    let body = if lines.is_empty() {
-        Text::styled("no match", DIM)
+    let height = lines.len().clamp(1, 14) as u16 + 2;
+    let inner = popup(frame, area, 60, height, "jump to");
+    if lines.is_empty() {
+        frame.render_widget(Paragraph::new(Text::styled("no match", DIM)), inner);
     } else {
-        Text::from(lines)
-    };
-    frame.render_widget(Paragraph::new(body), inner);
+        frame.render_widget(
+            Paragraph::new(lines).scroll((scroll_to(at, inner.height), 0)),
+            inner,
+        );
+    }
 }
 
 fn draw_profiles(frame: &mut Frame, area: Rect, app: &App, at: usize) {
@@ -625,6 +630,15 @@ mod tests {
             generation: 2,
             next: "t2".into(),
         });
+        insta::assert_snapshot!(render(&app));
+    }
+
+    #[test]
+    fn palette_lists_matches_with_a_highlight() {
+        let mut app = app();
+        ready(&mut app);
+        press(&mut app, KeyCode::Char(':'));
+        press(&mut app, KeyCode::Char('t'));
         insta::assert_snapshot!(render(&app));
     }
 

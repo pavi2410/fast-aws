@@ -244,25 +244,45 @@ impl Registry {
         self.kinds.iter().find(|k| k.id() == id).cloned()
     }
 
-    /// Resolves what was typed in the palette: an exact ID or alias first, then the
-    /// first kind whose ID, alias or title starts with it.
-    pub fn find(&self, typed: &str) -> Option<Arc<dyn ResourceKind>> {
+    /// The palette kinds matching what was typed, best first: an exact ID, alias
+    /// or title; then a name starting with it; then a title or ID containing it.
+    /// Ties keep registration order. Empty input lists every palette kind.
+    pub fn search(&self, typed: &str) -> Vec<Arc<dyn ResourceKind>> {
         let typed = typed.trim().trim_start_matches(':').to_lowercase();
-        if typed.is_empty() {
+        let rank = |k: &Arc<dyn ResourceKind>| -> Option<u8> {
+            if typed.is_empty() {
+                return Some(0);
+            }
+            let title = k.title().to_lowercase();
+            let names = || {
+                [k.id(), title.as_str()]
+                    .into_iter()
+                    .chain(k.aliases().iter().copied())
+            };
+            if names().any(|n| n == typed) {
+                Some(0)
+            } else if names().any(|n| n.starts_with(&typed)) {
+                Some(1)
+            } else if title.contains(&typed) || k.id().contains(&typed) {
+                Some(2)
+            } else {
+                None
+            }
+        };
+        let mut ranked: Vec<_> = self
+            .palette()
+            .filter_map(|k| Some((rank(k)?, k.clone())))
+            .collect();
+        ranked.sort_by_key(|(r, _)| *r);
+        ranked.into_iter().map(|(_, k)| k).collect()
+    }
+
+    /// The best palette match for what was typed, if any.
+    pub fn find(&self, typed: &str) -> Option<Arc<dyn ResourceKind>> {
+        if typed.trim().trim_start_matches(':').is_empty() {
             return None;
         }
-        let names = |k: &Arc<dyn ResourceKind>| {
-            let mut names = vec![k.id().to_owned(), k.title().to_lowercase()];
-            names.extend(k.aliases().iter().map(|a| a.to_string()));
-            names
-        };
-        let exact = self.palette().find(|k| names(k).contains(&typed));
-        exact
-            .or_else(|| {
-                self.palette()
-                    .find(|k| names(k).iter().any(|n| n.starts_with(&typed)))
-            })
-            .cloned()
+        self.search(typed).into_iter().next()
     }
 }
 
@@ -328,6 +348,21 @@ mod tests {
         assert!(r.find("s3:object").is_none());
         assert_eq!(r.get("s3:object").unwrap().title(), "Objects");
         assert_eq!(r.palette().count(), 2);
+    }
+
+    #[test]
+    fn search_ranks_exact_then_prefix_then_contains() {
+        let mut r = registry();
+        r.register(Fake("ec2:vpc", "VPCs", &["vpc"], true));
+        r.register(Fake("ec2:sg-rule", "SG Rules", &["sgr"], true));
+        let ids = |typed: &str| r.search(typed).iter().map(|k| k.id()).collect::<Vec<_>>();
+        assert_eq!(ids("sg"), ["ec2:sg", "ec2:sg-rule"]);
+        assert_eq!(ids("group"), ["ec2:sg"]);
+        assert_eq!(
+            ids(""),
+            ["ec2:instance", "ec2:sg", "ec2:vpc", "ec2:sg-rule"]
+        );
+        assert!(ids("zzz").is_empty());
     }
 
     #[test]

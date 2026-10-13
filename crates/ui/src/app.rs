@@ -104,8 +104,8 @@ pub enum Screen {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Overlay {
     None,
-    /// `:` command palette, with what has been typed.
-    Palette(String),
+    /// `:` command palette: what has been typed, and the highlighted match.
+    Palette(String, usize),
     /// `/` filter being edited (the text lives in the list).
     Filter,
     /// `P`: index into [`App::profile_entries`].
@@ -266,7 +266,7 @@ impl App {
         }
         self.flash = None;
         match self.overlay.clone() {
-            Overlay::Palette(input) => self.palette_key(key, input),
+            Overlay::Palette(input, at) => self.palette_key(key, input, at),
             Overlay::Filter => self.filter_key(key),
             Overlay::Profiles(i) => self.profiles_key(key, i),
             Overlay::Regions(i) => self.regions_key(key, i),
@@ -285,7 +285,7 @@ impl App {
     fn global_key(&mut self, key: KeyEvent) -> Option<Vec<Effect>> {
         let effects = match key.code {
             KeyCode::Char(':') => {
-                self.overlay = Overlay::Palette(String::new());
+                self.overlay = Overlay::Palette(String::new(), 0);
                 Vec::new()
             }
             KeyCode::Char('?') => {
@@ -458,37 +458,45 @@ impl App {
         Vec::new()
     }
 
-    fn palette_key(&mut self, key: KeyEvent, mut input: String) -> Vec<Effect> {
+    fn palette_key(&mut self, key: KeyEvent, mut input: String, at: usize) -> Vec<Effect> {
+        let matches = self.registry.search(&input).len();
         match key.code {
             KeyCode::Esc => self.overlay = Overlay::None,
             KeyCode::Enter => {
                 self.overlay = Overlay::None;
-                return self.run_command(&input);
+                return self.run_command(&input, at);
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                self.overlay = Overlay::Palette(input, (at + 1).min(matches.saturating_sub(1)));
+            }
+            KeyCode::Up | KeyCode::BackTab => {
+                self.overlay = Overlay::Palette(input, at.saturating_sub(1));
             }
             KeyCode::Backspace => {
                 input.pop();
-                self.overlay = Overlay::Palette(input);
+                self.overlay = Overlay::Palette(input, 0);
             }
             KeyCode::Char(c) => {
                 input.push(c);
-                self.overlay = Overlay::Palette(input);
+                self.overlay = Overlay::Palette(input, 0);
             }
             _ => {}
         }
         Vec::new()
     }
 
-    fn run_command(&mut self, input: &str) -> Vec<Effect> {
+    /// Runs what was typed in the palette: `q` quits, anything else opens the
+    /// highlighted match.
+    fn run_command(&mut self, input: &str, at: usize) -> Vec<Effect> {
         let command = input.trim();
         if matches!(command, "q" | "quit") {
             self.should_quit = true;
             return vec![Effect::Quit];
         }
-        if command.is_empty() {
-            return Vec::new();
-        }
-        let Some(kind) = self.registry.find(command) else {
-            self.flash = Some(format!("unknown resource type: {command}"));
+        let Some(kind) = self.registry.search(command).into_iter().nth(at) else {
+            if !command.is_empty() {
+                self.flash = Some(format!("unknown resource type: {command}"));
+            }
             return Vec::new();
         };
         let generation = self.generation();
@@ -842,6 +850,22 @@ pub(crate) mod tests {
         assert_eq!(app.list.kind.id(), "fake:thing");
         assert!(app.back.is_empty());
         assert_eq!(app.list.parent, None);
+    }
+
+    #[test]
+    fn palette_opens_the_highlighted_match() {
+        let mut app = app();
+        press(&mut app, ":");
+        app.handle_key(key(KeyCode::Down)); // only one palette kind: stays on it
+        assert_eq!(app.overlay, Overlay::Palette(String::new(), 0));
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert_eq!(effects[0], Effect::CancelLoads);
+        assert_eq!(app.list.kind.id(), "fake:thing");
+
+        press(&mut app, ":thi");
+        assert_eq!(app.overlay, Overlay::Palette("thi".into(), 0));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.overlay, Overlay::None);
     }
 
     #[test]

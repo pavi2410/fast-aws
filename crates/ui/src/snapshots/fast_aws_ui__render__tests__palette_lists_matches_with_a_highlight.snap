@@ -1,0 +1,16 @@
+---
+source: crates/ui/src/render.rs
+expression: render(&app)
+---
+" fast-aws  acme-dev (sso acme) │ 123456789012 │ eu-west  ? help "
+" Things (2)                                                     "
+" NAME                                                     ID    "
+"▸web-1                                                    a     "
+" db                                                       b     "
+"  ╭ jump to ─────────────────────────────────────────────────╮  "
+"  │▸ Things                  :thing                          │  "
+"  ╰──────────────────────────────────────────────────────────╯  "
+"                                                                "
+"                                                                "
+"                                                                "
+" :t▏   ↑/↓ choose · enter open · esc cancel                     "
