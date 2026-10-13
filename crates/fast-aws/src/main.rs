@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use fast_aws_core::profiles::ProfileCatalog;
-use fast_aws_core::{ConfigFactory, Registry, default_region};
+use fast_aws_core::{Config, ConfigFactory, Registry, default_region};
 use fast_aws_ui::app::App;
 
 const USAGE: &str = "\
@@ -13,6 +13,8 @@ usage: fast-aws [RESOURCE] [--profile NAME] [--region REGION]
   RESOURCE           resource type to open, e.g. ec2 (default: ec2)
   -p, --profile      AWS profile (default: AWS_PROFILE or `default`)
   -r, --region       AWS region (default: the profile's region)
+      --read-only    never offer actions that change anything (also settable
+                     per profile in ~/.config/fast-aws/config.toml)
   -h, --help         show this help
   -V, --version      show the version
 
@@ -23,6 +25,7 @@ struct Args {
     resource: Option<String>,
     profile: Option<String>,
     region: Option<String>,
+    read_only: bool,
 }
 
 enum Parsed {
@@ -44,6 +47,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Parsed, String> 
             }
             "-p" | "--profile" => parsed.profile = Some(value(&arg)?),
             "-r" | "--region" => parsed.region = Some(value(&arg)?),
+            "--read-only" => parsed.read_only = true,
             _ if arg.starts_with('-') => return Err(format!("unknown option {arg}")),
             _ if parsed.resource.is_none() => parsed.resource = Some(arg),
             _ => return Err(format!("unexpected argument {arg}")),
@@ -119,7 +123,15 @@ async fn main() -> ExitCode {
         .unwrap_or_else(|| default_region(catalog.get(&profile).and_then(|p| p.region.as_deref())));
     let factory = Arc::new(ConfigFactory::default());
 
-    let (app, effects) = App::new(registry, catalog, profile, region, kind);
+    let config = match Config::load() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("fast-aws: {err}");
+            return ExitCode::from(2);
+        }
+    };
+    let (mut app, effects) = App::new(registry, catalog, profile, region, kind);
+    app.set_safety(config, args.read_only);
     match fast_aws_ui::runtime::run(app, effects, factory).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -148,8 +160,17 @@ mod tests {
                 resource: Some("ec2".into()),
                 profile: Some("dev".into()),
                 region: Some("eu-west-1".into()),
+                read_only: false,
             }
         );
+    }
+
+    #[test]
+    fn read_only_flag() {
+        let Ok(Parsed::Run(args)) = parse(&["--read-only"]) else {
+            panic!("expected Run");
+        };
+        assert!(args.read_only);
     }
 
     #[test]
