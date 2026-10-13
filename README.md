@@ -40,6 +40,7 @@ need an MFA code aren't supported yet.
 | `r` | Refresh · `n` load more (lists pause after 5 pages) |
 | `P` / `R` | Switch profile / region |
 | `Z` | Times in local time / UTC |
+| `,` | Settings for this session: borders, sparkline style, times, sparklines on/off |
 | `Esc`, `q` | Back; `q` quits from the top · `Ctrl-C` quits |
 | `?` | Help |
 
@@ -83,7 +84,7 @@ data you may not want on screen. Check the current AWS prices for your region.
 
 | Feature | What it calls | Cost / impact |
 |---|---|---|
-| **Sparklines** (`--metrics` or `metrics = true`) | CloudWatch `GetMetricData` for up to 60 rows around the cursor, reused for 10 minutes | **Billed per metric requested.** Off by default. |
+| **Sparklines** (`--metrics`, `metrics = true`, or `,` → sparklines) | CloudWatch `GetMetricData` for up to 60 rows around the cursor, reused for 10 minutes | **Billed per metric requested.** Off by default. |
 | **Cost Explorer** (`:cost`) | `GetCostAndUsage`, once per open, never refreshed on its own (`r` re-runs it) | **Billed per request** (about $0.01 each). |
 | **Logs Insights** (`I` on a log group) | `StartQuery` / `GetQueryResults`; the query is stopped if you leave the view | **Billed per GB of logs scanned.** Keep the time range short (`-15m …`). |
 | **Follow live** (`g` → follow live) | `FilterLogEvents` every 2 s, at most 2 calls a poll | Uses a shared per-account rate limit (5–25 calls/s depending on region), and puts log contents on screen. Not the billed Live Tail API. |

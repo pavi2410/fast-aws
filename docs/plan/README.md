@@ -51,6 +51,7 @@ The same keys work for every resource type. Service docs only list *extra* keys.
 | `P` / `R` | Switch profile / region |
 | `L` | Run SSO login for the current profile (shown when the session has expired) |
 | `:unlock` | Allow mutating actions on a prod profile for this session |
+| `,` | Settings for this session (borders, sparkline style, times, sparklines) |
 | `?` | Help for the current view |
 
 Keys some rows offer (shown in each view's help):
