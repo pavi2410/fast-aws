@@ -1,0 +1,12 @@
+[package]
+name = "fast-aws-ui"
+description = "Terminal UI: app loop and shared widgets for fast-aws"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fast-aws-core.workspace = true
+
+[lints]
+workspace = true
