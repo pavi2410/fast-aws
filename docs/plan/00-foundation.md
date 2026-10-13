@@ -41,7 +41,10 @@ crates/
   fast-aws/      the binary; enables services through Cargo features (all on by default)
 ```
 
-- Each `svc-*` crate registers its resource kinds with a registry in `core`.
+- Package names are prefixed: `fast-aws-core`, `fast-aws-ui`, `fast-aws-svc-ec2`, …
+  (directories stay short). A package called `core` would clash with Rust's
+  built-in `core` crate.
+- Each `svc-*` crate registers its resource kinds with a registry in `fast-aws-core`.
 - Turn on the SDK's `rt-tokio` + `behavior-version-latest` features and nothing
   more than needed. Keep `aws-config`'s default `sso` feature on: SSO login depends
   on it.
