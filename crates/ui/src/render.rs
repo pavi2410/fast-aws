@@ -189,11 +189,18 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
     let header = Row::new(columns.iter().map(|c| Cell::from(c.title))).style(DIM.bold());
     let rows = list.visible_rows().map(|r| {
-        Row::new(
-            r.cells
-                .iter()
-                .map(|c| Cell::from(c.text.as_str()).style(tone(c.tone))),
-        )
+        // A fetched sparkline replaces its cell; one being fetched shows `…`.
+        let spark = r.metric.as_ref().and_then(|spec| {
+            let text = match app.sparkline(&r.id)? {
+                Some(points) => fast_aws_core::metrics::sparkline(points, spec.summary, spec.unit),
+                None => "…".to_owned(),
+            };
+            Some((spec.column, text))
+        });
+        Row::new(r.cells.iter().enumerate().map(|(i, c)| match &spark {
+            Some((column, text)) if *column == i => Cell::from(text.clone()).style(DIM),
+            _ => Cell::from(c.text.as_str()).style(tone(c.tone)),
+        }))
     });
     let table = Table::new(rows, widths)
         .header(header)
@@ -726,6 +733,23 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(90, 3)).unwrap();
         terminal.draw(|f| draw(f, &app)).unwrap();
         insta::assert_snapshot!(terminal.backend().to_string());
+    }
+
+    #[test]
+    fn sparklines_replace_their_cell() {
+        let (mut app, effects) = crate::app::tests::app_with_metrics(true);
+        ready(&mut app);
+        let crate::app::Effect::LoadMetrics { scope, .. } = &effects[0] else {
+            panic!()
+        };
+        app.handle_msg(Msg::Metrics {
+            scope: scope.clone(),
+            result: Ok(std::collections::HashMap::from([(
+                "a".to_owned(),
+                vec![0.0, 1.0, 4.0, 2.0],
+            )])),
+        });
+        insta::assert_snapshot!(render(&app));
     }
 
     #[test]

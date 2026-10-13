@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use fast_aws_core::metrics::MetricSource;
 use fast_aws_core::{ConfigFactory, Ctx, ListQuery, Parent, ResourceKind, Scope, caller_identity};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use ratatui::crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
@@ -28,6 +29,7 @@ pub async fn run(
     mut app: App,
     initial: Vec<Effect>,
     factory: Arc<ConfigFactory>,
+    metrics: Option<Arc<dyn MetricSource>>,
 ) -> io::Result<()> {
     let mut terminal = ratatui::try_init()?;
     let (tx, mut rx) = unbounded_channel();
@@ -67,6 +69,22 @@ pub async fn run(
                         let parent = target.parent.as_ref();
                         let result = target.kind.describe(&ctx, parent, &id).await;
                         let _ = tx.send(Input::Msg(Msg::Detail { generation, result }));
+                    });
+                }
+                Effect::LoadMetrics {
+                    scope,
+                    metrics: wanted,
+                } => {
+                    let Some(source) = metrics.clone() else {
+                        continue;
+                    };
+                    let (factory, tx) = (factory.clone(), tx.clone());
+                    // Not one of `loads`: leaving the view shouldn't strand
+                    // rows as "being fetched".
+                    tokio::spawn(async move {
+                        let ctx = factory.ctx(&scope.0, &scope.1).await;
+                        let result = source.fetch(&ctx, &wanted, SPARK_HOURS).await;
+                        let _ = tx.send(Input::Msg(Msg::Metrics { scope, result }));
                     });
                 }
                 Effect::RunInTerminal(command) => {
@@ -153,6 +171,9 @@ fn call_region<'a>(
         Scope::Regional => row_region.or(parent_region),
     }
 }
+
+/// Hours of history in a sparkline.
+const SPARK_HOURS: u32 = 24;
 
 /// Pages per load before pausing. Some lists (S3 keys, Cognito users, log
 /// streams) can run to millions of items, and some of those APIs are heavily

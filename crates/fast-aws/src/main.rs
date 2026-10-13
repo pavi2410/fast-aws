@@ -3,8 +3,10 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use fast_aws_core::metrics::MetricSource;
 use fast_aws_core::profiles::ProfileCatalog;
 use fast_aws_core::{Config, ConfigFactory, Registry, default_region};
+use fast_aws_svc_cloudwatch::CloudWatchMetrics;
 use fast_aws_ui::app::App;
 
 const USAGE: &str = "\
@@ -15,6 +17,8 @@ usage: fast-aws [RESOURCE] [--profile NAME] [--region REGION]
   -r, --region       AWS region (default: the profile's region)
       --read-only    never offer actions that change anything (also settable
                      per profile in ~/.config/fast-aws/config.toml)
+      --no-metrics   no sparklines (they use CloudWatch GetMetricData, which
+                     is billed per metric; also `metrics = false` in config)
   -h, --help         show this help
   -V, --version      show the version
 
@@ -26,6 +30,7 @@ struct Args {
     profile: Option<String>,
     region: Option<String>,
     read_only: bool,
+    no_metrics: bool,
 }
 
 enum Parsed {
@@ -48,6 +53,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Parsed, String> 
             "-p" | "--profile" => parsed.profile = Some(value(&arg)?),
             "-r" | "--region" => parsed.region = Some(value(&arg)?),
             "--read-only" => parsed.read_only = true,
+            "--no-metrics" => parsed.no_metrics = true,
             _ if arg.starts_with('-') => return Err(format!("unknown option {arg}")),
             _ if parsed.resource.is_none() => parsed.resource = Some(arg),
             _ => return Err(format!("unexpected argument {arg}")),
@@ -130,9 +136,12 @@ async fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let metrics = !args.no_metrics && config.metrics.unwrap_or(true);
     let (mut app, effects) = App::new(registry, catalog, profile, region, kind);
     app.set_safety(config, args.read_only);
-    match fast_aws_ui::runtime::run(app, effects, factory).await {
+    app.set_metrics(metrics);
+    let source = metrics.then(|| Arc::new(CloudWatchMetrics) as Arc<dyn MetricSource>);
+    match fast_aws_ui::runtime::run(app, effects, factory, source).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("fast-aws: terminal error: {err}");
@@ -161,6 +170,7 @@ mod tests {
                 profile: Some("dev".into()),
                 region: Some("eu-west-1".into()),
                 read_only: false,
+                no_metrics: false,
             }
         );
     }
@@ -171,6 +181,10 @@ mod tests {
             panic!("expected Run");
         };
         assert!(args.read_only);
+        let Ok(Parsed::Run(args)) = parse(&["--no-metrics"]) else {
+            panic!("expected Run");
+        };
+        assert!(args.no_metrics);
     }
 
     #[test]

@@ -2,8 +2,11 @@
 //! and [`Effect`]s (work for the runtime to start) come out. Nothing here touches
 //! the terminal or AWS, so all of it is unit-tested.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use fast_aws_core::metrics::MetricSpec;
 use fast_aws_core::profiles::{ProfileCatalog, ProfileInfo};
 use fast_aws_core::{
     AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Parent, Query, Registry,
@@ -43,6 +46,21 @@ pub const REGIONS: &[&str] = &[
 
 const PAGE_JUMP: isize = 20;
 
+/// Rows around the cursor whose sparklines are fetched together.
+const SPARK_BATCH: usize = 60;
+/// How long fetched sparklines are reused before they're fetched again.
+const SPARK_TTL: Duration = Duration::from_secs(600);
+
+/// Profile, region and kind a sparkline request was made for.
+pub type SparkScope = (String, String, &'static str);
+type SparkKey = (String, String, &'static str, String);
+
+struct Spark {
+    /// `None` while being fetched.
+    points: Option<Vec<f64>>,
+    at: Instant,
+}
+
 /// Work for the runtime. Loads run against the app's current profile and region.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
@@ -65,12 +83,21 @@ pub enum Effect {
     CancelLoads,
     /// Suspend the TUI and run this command (SSO login) in the terminal.
     RunInTerminal(Vec<String>),
+    /// Fetch sparkline points for these rows (billed per metric).
+    LoadMetrics {
+        scope: SparkScope,
+        metrics: Vec<(String, MetricSpec)>,
+    },
     Quit,
 }
 
 /// Results coming back from the runtime.
 #[derive(Debug)]
 pub enum Msg {
+    Metrics {
+        scope: SparkScope,
+        result: Result<HashMap<String, Vec<f64>>, AwsError>,
+    },
     Identity {
         generation: u64,
         result: Result<CallerIdentity, AwsError>,
@@ -151,6 +178,8 @@ pub struct App {
     /// found in cached lists.
     pub relations_menu: Vec<Relation>,
     cache: Cache,
+    metrics_enabled: bool,
+    sparks: HashMap<SparkKey, Spark>,
     config: Config,
     read_only_flag: bool,
     next_generation: u64,
@@ -182,6 +211,8 @@ impl App {
             guard: Guard::new(&Config::default(), "", false),
             cache: Cache::default(),
             relations_menu: Vec::new(),
+            metrics_enabled: false,
+            sparks: HashMap::new(),
             config: Config::default(),
             read_only_flag: false,
             next_generation: 2,
@@ -247,6 +278,83 @@ impl App {
     }
 
     pub fn handle_msg(&mut self, msg: Msg) -> Vec<Effect> {
+        let mut effects = self.handle_msg_inner(msg);
+        effects.extend(self.sparklines_effect());
+        effects
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let mut effects = self.handle_key_inner(key);
+        effects.extend(self.sparklines_effect());
+        effects
+    }
+
+    /// Turns sparkline fetching on (the binary does, unless `--no-metrics`).
+    pub fn set_metrics(&mut self, enabled: bool) {
+        self.metrics_enabled = enabled;
+    }
+
+    /// The fetched sparkline for a row of the current list, if any: `None` when
+    /// not fetched, `Some(None)` while being fetched.
+    pub fn sparkline(&self, row_id: &str) -> Option<Option<&[f64]>> {
+        let key = self.spark_key(row_id);
+        self.sparks.get(&key).map(|s| s.points.as_deref())
+    }
+
+    fn spark_key(&self, row_id: &str) -> SparkKey {
+        (
+            self.profile.clone(),
+            self.region.clone(),
+            self.list.kind.id(),
+            row_id.to_owned(),
+        )
+    }
+
+    /// Requests sparklines for rows near the cursor that don't have fresh ones:
+    /// at most [`SPARK_BATCH`] per request, since each metric is billed.
+    fn sparklines_effect(&mut self) -> Option<Effect> {
+        if !self.metrics_enabled || self.list.is_loading() || !matches!(self.screen, Screen::List) {
+            return None;
+        }
+        let at = self.list.selected_index().unwrap_or(0);
+        let from = at.saturating_sub(SPARK_BATCH / 2);
+        let wanted: Vec<(String, MetricSpec)> = self
+            .list
+            .visible_rows()
+            .skip(from)
+            .take(SPARK_BATCH)
+            .filter_map(|r| Some((r.id.clone(), r.metric.clone()?)))
+            .filter(|(id, _)| {
+                self.sparks
+                    .get(&self.spark_key(id))
+                    .is_none_or(|s| s.at.elapsed() > SPARK_TTL)
+            })
+            .collect();
+        if wanted.is_empty() {
+            return None;
+        }
+        for (id, _) in &wanted {
+            let key = self.spark_key(id);
+            self.sparks.insert(
+                key,
+                Spark {
+                    points: None,
+                    at: Instant::now(),
+                },
+            );
+        }
+        let scope = (
+            self.profile.clone(),
+            self.region.clone(),
+            self.list.kind.id(),
+        );
+        Some(Effect::LoadMetrics {
+            scope,
+            metrics: wanted,
+        })
+    }
+
+    fn handle_msg_inner(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
             Msg::Identity { generation, result } if generation == self.identity_generation => {
                 self.identity = match result {
@@ -278,6 +386,26 @@ impl App {
                     };
                 }
             }
+            Msg::Metrics { scope, result } => {
+                let (profile, region, kind) = scope;
+                match result {
+                    Ok(points) => {
+                        for (id, series) in points {
+                            let key = (profile.clone(), region.clone(), kind, id);
+                            self.sparks.insert(
+                                key,
+                                Spark {
+                                    points: Some(series),
+                                    at: Instant::now(),
+                                },
+                            );
+                        }
+                    }
+                    // The rows stay marked as fetched, so this isn't retried
+                    // until they go stale.
+                    Err(e) => self.flash = Some(format!("sparklines unavailable: {e}")),
+                }
+            }
             Msg::TerminalCommandFinished { success } => {
                 if !success {
                     self.flash = Some("login command failed; see its output above".into());
@@ -290,7 +418,7 @@ impl App {
         Vec::new()
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+    fn handle_key_inner(&mut self, key: KeyEvent) -> Vec<Effect> {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.should_quit = true;
             return vec![Effect::Quit];
@@ -1328,6 +1456,92 @@ pub(crate) mod tests {
         app.handle_key(key(KeyCode::Esc));
         press(&mut app, "Z");
         assert_eq!(app.overlay, Overlay::None);
+    }
+
+    pub(crate) fn errors_metric(name: &str) -> fast_aws_core::metrics::MetricSpec {
+        fast_aws_core::metrics::MetricSpec {
+            namespace: "AWS/Lambda",
+            name: "Errors",
+            dimensions: vec![("FunctionName", name.to_owned())],
+            stat: "Sum",
+            summary: fast_aws_core::metrics::Summary::Total,
+            unit: "",
+            column: 1,
+        }
+    }
+
+    /// An app whose list has rows with metrics, loaded, with metrics on or off.
+    pub(crate) fn app_with_metrics(enabled: bool) -> (App, Vec<Effect>) {
+        let mut app = empty_app();
+        app.set_metrics(enabled);
+        let effects = app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![row("a", "web-1").metric(errors_metric("a")), row("b", "db")],
+                next: None,
+            }),
+        });
+        (app, effects)
+    }
+
+    #[test]
+    fn sparklines_are_requested_once_for_rows_near_the_cursor() {
+        let (mut app, effects) = app_with_metrics(true);
+        let [Effect::LoadMetrics { scope, metrics }] = effects.as_slice() else {
+            panic!("expected one LoadMetrics, got {effects:?}");
+        };
+        assert_eq!(
+            scope,
+            &("acme-dev".to_owned(), "eu-west-1".to_owned(), "fake:thing")
+        );
+        assert_eq!(metrics.len(), 1, "only rows that name a metric");
+        assert_eq!(app.sparkline("a"), Some(None), "marked as being fetched");
+
+        // Moving around doesn't ask again while they're fresh.
+        assert!(
+            press(&mut app, "jk")
+                .iter()
+                .all(|e| !matches!(e, Effect::LoadMetrics { .. }))
+        );
+
+        app.handle_msg(Msg::Metrics {
+            scope: scope.clone(),
+            result: Ok(HashMap::from([("a".to_owned(), vec![0.0, 2.0])])),
+        });
+        assert_eq!(app.sparkline("a"), Some(Some(&[0.0, 2.0][..])));
+    }
+
+    #[test]
+    fn no_sparklines_when_metrics_are_off() {
+        let (_, effects) = app_with_metrics(false);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn a_failed_fetch_says_so_once() {
+        let (mut app, effects) = app_with_metrics(true);
+        let Effect::LoadMetrics { scope, .. } = &effects[0] else {
+            panic!()
+        };
+        app.handle_msg(Msg::Metrics {
+            scope: scope.clone(),
+            result: Err(AwsError::new(
+                ErrorKind::AccessDenied,
+                Some("AccessDenied".into()),
+                "no",
+            )),
+        });
+        assert!(
+            app.flash
+                .as_deref()
+                .unwrap()
+                .starts_with("sparklines unavailable")
+        );
+        assert!(
+            press(&mut app, "j")
+                .iter()
+                .all(|e| !matches!(e, Effect::LoadMetrics { .. }))
+        );
     }
 
     #[test]
