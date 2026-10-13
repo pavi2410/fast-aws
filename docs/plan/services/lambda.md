@@ -68,7 +68,7 @@ allowed in read-only mode only after an extra confirmation.
 
 ## Gotchas
 
-- Lambda ignores updates while a previous update is still in progress
+- Lambda rejects an update (`ResourceConflictException`) while a previous one is still in progress
   (`LastUpdateStatus=InProgress`). Wait using the `function_updated` waiter before
   allowing the next edit.
 - Editing env vars replaces the *whole* `Environment` map. Always start from a fresh
