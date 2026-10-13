@@ -103,7 +103,13 @@ async fn list_roles(client: &Client, query: &ListQuery) -> Result<Page, AwsError
                         "iam:permission",
                         permissions::parent_for("role", r.role_name()),
                     )
-                    .query('S', simulation::PROMPT, "iam:simulation", r.arn())
+                    .query(
+                        'S',
+                        "simulate",
+                        simulation::PROMPT,
+                        "iam:simulation",
+                        r.arn(),
+                    )
             })
             .collect(),
         next: out.marker,
@@ -200,7 +206,13 @@ impl ResourceKind for Users {
                             "iam:permission",
                             permissions::parent_for("user", u.user_name()),
                         )
-                        .query('S', simulation::PROMPT, "iam:simulation", u.arn())
+                        .query(
+                            'S',
+                            "simulate",
+                            simulation::PROMPT,
+                            "iam:simulation",
+                            u.arn(),
+                        )
                 })
                 .collect(),
             next: out.marker,

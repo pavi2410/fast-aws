@@ -61,7 +61,15 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
     let rows = out
         .table_names()
         .iter()
-        .map(|n| Row::new(n, vec![n.as_str().into()]).query('Q', items::PROMPT, "dynamodb:item", n))
+        .map(|n| {
+            Row::new(n, vec![n.as_str().into()]).query(
+                'Q',
+                "query items",
+                items::PROMPT,
+                "dynamodb:item",
+                n,
+            )
+        })
         .collect();
     Ok(Page {
         rows,

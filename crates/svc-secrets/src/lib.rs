@@ -110,7 +110,7 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
             .iter()
             .map(|s| {
                 let id = s.arn().or(s.name()).unwrap_or_default();
-                row(s).query('v', reveal::PROMPT, "secrets:value", id)
+                row(s).query('v', "reveal", reveal::PROMPT, "secrets:value", id)
             })
             .collect(),
         next: out.next_token,

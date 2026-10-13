@@ -110,7 +110,7 @@ async fn list_groups(client: &Client, query: &ListQuery) -> Result<Page, AwsErro
                     region: None,
                 };
                 source(group_row(g))
-                    .query('I', insights::PROMPT, "logs:insights", name)
+                    .query('I', "insights", insights::PROMPT, "logs:insights", name)
                     .relate_inside("follow live", "logs:tail", parent)
             })
             .collect(),

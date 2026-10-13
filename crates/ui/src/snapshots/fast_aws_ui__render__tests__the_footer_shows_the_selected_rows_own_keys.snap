@@ -1,0 +1,10 @@
+---
+source: crates/ui/src/render.rs
+expression: terminal.backend().to_string()
+---
+" fast-aws  acme-dev (sso acme) │ 123456789012 │ eu-west-1                                              ? help "
+" Things (1)                                                                                                   "
+" NAME                                                                                                   ID    "
+"▸role                                                                                                   r     "
+"                                                                                                              "
+" S simulate  : jump  / filter  enter open  d describe  g go to  r refresh  P profile  R region  q quit        "

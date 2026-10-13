@@ -347,7 +347,22 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App, d: &DetailView) {
 }
 
 fn hints(pairs: &[(&'static str, &'static str)]) -> Line<'static> {
+    hints_with(pairs, &[])
+}
+
+/// Key hints, after the selected row's own keys (`S simulate`).
+fn hints_with(
+    pairs: &[(&'static str, &'static str)],
+    row_keys: &[(String, &'static str)],
+) -> Line<'static> {
     let mut spans = vec![Span::raw(" ")];
+    for (key, label) in row_keys {
+        spans.push(Span::styled(
+            key.clone(),
+            KEY.add_modifier(Modifier::REVERSED),
+        ));
+        spans.push(Span::styled(format!(" {label}  "), DIM));
+    }
     for (key, label) in pairs {
         spans.push(Span::styled(*key, KEY));
         spans.push(Span::styled(format!(" {label}  "), DIM));
@@ -356,6 +371,16 @@ fn hints(pairs: &[(&'static str, &'static str)]) -> Line<'static> {
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
+    let row_keys: Vec<(String, &'static str)> = app
+        .list
+        .selected_row()
+        .map(|r| {
+            r.queries
+                .iter()
+                .map(|q| (q.key.to_string(), q.label))
+                .collect()
+        })
+        .unwrap_or_default();
     let line = match (&app.overlay, &app.flash) {
         (Overlay::Prompt(query, input), _) => Line::from(vec![
             Span::styled(format!(" {}: ", query.prompt), KEY),
@@ -378,25 +403,31 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         (_, Some(flash)) => Line::styled(format!(" {flash}"), Style::new().fg(Color::Yellow)),
         _ if app.login_would_help() => hints(&[("L", "log in"), ("P", "profile"), ("q", "quit")]),
         _ => match app.screen {
-            Screen::List if !app.back.is_empty() => hints(&[
-                ("enter", "open"),
-                ("d", "describe"),
-                ("/", "filter"),
-                ("r", "refresh"),
-                ("esc", "back"),
-                (":", "jump"),
-            ]),
-            Screen::List => hints(&[
-                (":", "jump"),
-                ("/", "filter"),
-                ("enter", "open"),
-                ("d", "describe"),
-                ("g", "go to"),
-                ("r", "refresh"),
-                ("P", "profile"),
-                ("R", "region"),
-                ("q", "quit"),
-            ]),
+            Screen::List if !app.back.is_empty() => hints_with(
+                &[
+                    ("enter", "open"),
+                    ("d", "describe"),
+                    ("/", "filter"),
+                    ("r", "refresh"),
+                    ("esc", "back"),
+                    (":", "jump"),
+                ],
+                &row_keys,
+            ),
+            Screen::List => hints_with(
+                &[
+                    (":", "jump"),
+                    ("/", "filter"),
+                    ("enter", "open"),
+                    ("d", "describe"),
+                    ("g", "go to"),
+                    ("r", "refresh"),
+                    ("P", "profile"),
+                    ("R", "region"),
+                    ("q", "quit"),
+                ],
+                &row_keys,
+            ),
             Screen::Detail(_) => hints(&[
                 ("j/k", "scroll"),
                 ("tab", "fields/raw"),
@@ -754,6 +785,30 @@ mod tests {
             )])),
         });
         insta::assert_snapshot!(render(&app));
+    }
+
+    #[test]
+    fn the_footer_shows_the_selected_rows_own_keys() {
+        let mut app = empty_app();
+        ready(&mut app);
+        app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![
+                    fast_aws_core::Row::new("r", vec!["role".into(), "r".into()]).query(
+                        'S',
+                        "simulate",
+                        "actions",
+                        "fake:part",
+                        "r",
+                    ),
+                ],
+                next: None,
+            }),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(110, 6)).unwrap();
+        terminal.draw(|f| draw(f, &app)).unwrap();
+        insta::assert_snapshot!(terminal.backend().to_string());
     }
 
     #[test]

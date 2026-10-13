@@ -150,6 +150,8 @@ pub struct Relation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Query {
     pub key: char,
+    /// A word or two for the footer's key hints, e.g. `simulate`.
+    pub label: &'static str,
     /// Shown in the prompt, e.g. `actions to test`.
     pub prompt: &'static str,
     pub kind: &'static str,
@@ -213,12 +215,14 @@ impl Row {
     pub fn query(
         mut self,
         key: char,
+        label: &'static str,
         prompt: &'static str,
         kind: &'static str,
         parent_id: &str,
     ) -> Self {
         self.queries.push(Query {
             key,
+            label,
             prompt,
             kind,
             parent_id: parent_id.to_owned(),
@@ -510,6 +514,7 @@ mod tests {
     fn query_parents_carry_the_answer() {
         let q = Query {
             key: 'S',
+            label: "simulate",
             prompt: "actions",
             kind: "iam:simulation",
             parent_id: "arn:r".into(),

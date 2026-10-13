@@ -1515,7 +1515,7 @@ pub(crate) mod tests {
         app.handle_msg(Msg::Page {
             generation: 1,
             result: Ok(Page {
-                rows: vec![row("a", "web-1").query('S', "parts named", "fake:part", "a")],
+                rows: vec![row("a", "web-1").query('S', "find", "parts named", "fake:part", "a")],
                 next: None,
             }),
         });
