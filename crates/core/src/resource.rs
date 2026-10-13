@@ -186,6 +186,8 @@ pub struct Row {
     pub relations: Vec<Relation>,
     /// Questions this row can be asked (see [`Query`]).
     pub queries: Vec<Query>,
+    /// A metric to draw as a sparkline in one of the row's cells.
+    pub metric: Option<crate::metrics::MetricSpec>,
 }
 
 impl Row {
@@ -197,7 +199,14 @@ impl Row {
             region: None,
             relations: Vec::new(),
             queries: Vec::new(),
+            metric: None,
         }
+    }
+
+    /// Draws `metric` as a sparkline in its cell, once fetched.
+    pub fn metric(mut self, metric: crate::metrics::MetricSpec) -> Self {
+        self.metric = Some(metric);
+        self
     }
 
     /// Lets `key` on this row ask `prompt`, answered by a list of `kind`.

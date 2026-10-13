@@ -5,6 +5,7 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod fmt;
+pub mod metrics;
 pub mod profiles;
 pub mod resource;
 
