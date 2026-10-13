@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use aws_sdk_ec2::Client;
 use aws_sdk_ec2::types::{Filter, Instance, InstanceStateName};
+use fast_aws_core::metrics::{MetricSpec, Summary};
 use fast_aws_core::{
     AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
 };
@@ -21,6 +22,7 @@ const COLUMNS: &[Column] = &[
     Column::fixed("PUBLIC IP", 15),
     Column::fixed("AZ", 12),
     Column::fixed("AGE", 5),
+    Column::fixed("CPU 24h (peak)", 30),
 ];
 
 pub struct Instances;
@@ -109,8 +111,18 @@ fn row(i: &Instance, now: i64) -> Row {
                 .map(|t| fast_aws_core::fmt::age(now, t.secs()))
                 .unwrap_or_else(|| "-".into())
                 .into(),
+            "".into(),
         ],
     )
+    .metric(MetricSpec {
+        namespace: "AWS/EC2",
+        name: "CPUUtilization",
+        dimensions: vec![("InstanceId", i.instance_id().unwrap_or_default().to_owned())],
+        stat: "Average",
+        summary: Summary::Peak,
+        unit: "%",
+        column: 8,
+    })
 }
 
 fn state_cell(state: Option<&InstanceStateName>) -> Cell {
@@ -255,7 +267,8 @@ mod tests {
                 "10.0.1.12",
                 "-",
                 "eu-west-1a",
-                "41d"
+                "41d",
+                ""
             ]
         );
         assert_eq!(page.rows[0].cells[2].tone, Tone::Good);
