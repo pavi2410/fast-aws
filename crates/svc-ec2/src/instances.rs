@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use aws_sdk_ec2::Client;
-use aws_sdk_ec2::types::{Filter, Instance, InstanceStateName, Tag};
+use aws_sdk_ec2::types::{Filter, Instance, InstanceStateName};
 use fast_aws_core::{
     AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
 };
@@ -83,13 +83,7 @@ async fn describe(client: &Client, id: &str) -> Result<Detail, AwsError> {
         .iter()
         .flat_map(|r| r.instances())
         .next()
-        .ok_or_else(|| {
-            AwsError::new(
-                fast_aws_core::ErrorKind::NotFound,
-                None,
-                format!("{id} not found"),
-            )
-        })?;
+        .ok_or_else(|| AwsError::not_found(id))?;
     Ok(Detail {
         fields: fields(instance),
         raw: format!("{instance:#?}"),
@@ -101,7 +95,7 @@ fn row(i: &Instance, now: i64) -> Row {
     Row::new(
         i.instance_id().unwrap_or_default(),
         vec![
-            name(i.tags()).unwrap_or("-").into(),
+            crate::name(i.tags()).unwrap_or("-").into(),
             i.instance_id().unwrap_or_default().into(),
             state_cell(state),
             i.instance_type().map(|t| t.as_str()).unwrap_or("-").into(),
@@ -134,21 +128,10 @@ fn state_cell(state: Option<&InstanceStateName>) -> Cell {
     Cell::toned(format!("{glyph} {}", state.as_str()), tone)
 }
 
-fn name(tags: &[Tag]) -> Option<&str> {
-    tags.iter()
-        .find(|t| t.key() == Some("Name"))
-        .and_then(|t| t.value())
-}
-
 fn fields(i: &Instance) -> Value {
-    let tags: serde_json::Map<String, Value> = i
-        .tags()
-        .iter()
-        .map(|t| (t.key().unwrap_or_default().to_owned(), json!(t.value())))
-        .collect();
     json!({
         "InstanceId": i.instance_id(),
-        "Name": name(i.tags()),
+        "Name": crate::name(i.tags()),
         "State": i.state().and_then(|s| s.name()).map(|s| s.as_str()),
         "InstanceType": i.instance_type().map(|t| t.as_str()),
         "ImageId": i.image_id(),
@@ -168,7 +151,7 @@ fn fields(i: &Instance) -> Value {
         "KeyName": i.key_name(),
         "Architecture": i.architecture().map(|a| a.as_str()),
         "PlatformDetails": i.platform_details(),
-        "Tags": tags,
+        "Tags": crate::tags(i.tags()),
     })
 }
 
@@ -180,7 +163,7 @@ mod tests {
         DescribeInstancesError, DescribeInstancesOutput,
     };
     use aws_sdk_ec2::primitives::DateTime;
-    use aws_sdk_ec2::types::{InstanceState, InstanceType, Placement, Reservation};
+    use aws_sdk_ec2::types::{InstanceState, InstanceType, Placement, Reservation, Tag};
     use aws_smithy_mocks::{mock, mock_client};
     use fast_aws_core::ErrorKind;
 

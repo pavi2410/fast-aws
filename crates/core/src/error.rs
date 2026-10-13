@@ -55,6 +55,11 @@ impl AwsError {
         }
     }
 
+    /// The resource asked for doesn't exist.
+    pub fn not_found(what: &str) -> Self {
+        Self::new(ErrorKind::NotFound, None, format!("{what} not found"))
+    }
+
     /// Builds an error from an SDK result, using the service error code when AWS sent
     /// one and the full error chain text otherwise.
     pub fn from_sdk<E, R>(err: SdkError<E, R>) -> Self
