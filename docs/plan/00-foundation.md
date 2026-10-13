@@ -43,7 +43,8 @@ crates/
 
 - Each `svc-*` crate registers its resource kinds with a registry in `core`.
 - Turn on the SDK's `rt-tokio` + `behavior-version-latest` features and nothing
-  more than needed.
+  more than needed. Keep `aws-config`'s default `sso` feature on: SSO login depends
+  on it.
 - Use a dev profile with `debug = "line-tables-only"`; consider `mold`/`lld` as the linker.
 
 ## The `Resource` abstraction
@@ -102,9 +103,26 @@ pub struct ActionSpec {
   `credential_process`, and IMDS.
 - When the app starts, and when you switch profile, call `sts:GetCallerIdentity`.
   It shows the account ID and ARN in the header and proves the credentials work.
-- **SSO expiry:** detect expired-token errors and show an inline banner saying
-  *"SSO session expired: press `L` to run `aws sso login --profile X`"*.
-  Later, this login could run inside the TUI using the `ssooidc` device flow.
+- **SSO with `[sso-session]` sections** (the format behind
+  `aws sso login --sso-session <name>`) is supported by `aws-config` 1.12. Checked in
+  the source:
+  - `profile/credentials/repr.rs` resolves a profile's `sso_session = <name>` to its
+    `[sso-session <name>]` section.
+  - `sso/cache.rs` keys the cached token by session name, so it finds the token in
+    `~/.aws/sso/cache/` that the CLI wrote.
+  - `SsoTokenProvider` refreshes that token when it's close to expiring.
+- **What this means for the TUI:**
+  - One sso-session usually backs many profiles (one per account/role). The profile
+    switcher (`P`) **groups profiles by sso-session**, and shows each session's login
+    state and expiry time.
+  - **SSO expiry:** detect expired-token errors and show an inline banner:
+    *"SSO session `<name>` expired: press `L` to log in"*.
+    `L` suspends the TUI and runs `aws sso login --sso-session <name>` if the profile
+    uses an sso-session, or `aws sso login --profile X` for the legacy format (where
+    `sso_start_url` is on the profile itself). One login fixes every profile in that
+    session, so their cached clients and views are refreshed.
+  - Later, the login could run inside the TUI using the `ssooidc` device flow,
+    removing the need for the AWS CLI.
 - **MFA (`mfa_serial`):** check whether `aws-config` can prompt for a code. If not,
   give the user the profile's MFA prompt in a dialog using a custom credentials provider.
 
