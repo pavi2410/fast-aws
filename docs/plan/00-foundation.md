@@ -314,3 +314,25 @@ The profile-discovery API we need *is* public:
 - `aws_config::profile::load(…)` returns a `ProfileSet` with `profiles()`,
   `get_profile()`, `sso_sessions()` and `sso_session(name)`.
 - That's enough to group profiles by sso-session without writing our own INI parser.
+
+### Spike 8: build times (2026-10-13)
+
+Measured on this machine (8 cores, Rust 1.98, default linker, dev profile):
+
+| Build | Time |
+|---|---|
+| Cold `cargo build -p fast-aws-svc-ec2` (core deps already built) | 114 s, of which `aws-sdk-ec2` alone is 96 s |
+| Cold `cargo test -p fast-aws-svc-ec2` | 111 s: `aws-sdk-ec2` is compiled a second time with `test-util` |
+| Incremental build after editing `svc-ec2` | 0.7 s |
+| Incremental test after editing `svc-ec2` | 1.2 s |
+
+**Decision:**
+- The one-crate-per-service layout works. Day-to-day edits rebuild in about a second,
+  because the large SDK crates are compiled once and then cached.
+- The cold cost is per SDK crate, and EC2 is by far the largest. Later services will
+  add less.
+- `test-util` stays a dev-only feature even though it means a second compile of
+  each SDK crate. Turning it on for normal builds would put test helpers in the
+  release binary.
+- A faster linker (`mold`/`lld`) isn't installed here and isn't needed yet. Revisit if
+  link time of the `fast-aws` binary becomes noticeable.
