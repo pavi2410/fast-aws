@@ -73,6 +73,14 @@ fn row(b: &Bucket) -> Row {
     .in_region(region)
 }
 
+/// Error codes S3 uses for "this setting isn't configured".
+const NOT_CONFIGURED: &[&str] = &[
+    "NoSuchTagSet",
+    "NoSuchPublicAccessBlockConfiguration",
+    "ServerSideEncryptionConfigurationNotFoundError",
+    "NoSuchBucketPolicy",
+];
+
 /// Each setting is its own call; one being denied or unset doesn't hide the rest.
 async fn describe(client: &Client, bucket: &str) -> Result<Detail, AwsError> {
     let (versioning, encryption, public_access, policy_status, tagging) = tokio::join!(
@@ -85,7 +93,19 @@ async fn describe(client: &Client, bucket: &str) -> Result<Detail, AwsError> {
     // Versioning needs only s3:GetBucketVersioning and always answers for an
     // existing bucket, so its failure is the bucket's failure.
     let versioning = versioning.map_err(AwsError::from_sdk)?;
-    let or_error = |r: Result<Value, AwsError>| r.unwrap_or_else(|e| json!(format!("⚠ {e}")));
+    let or_error = |r: Result<Value, AwsError>, none: Value| match r {
+        Ok(v) => v,
+        // S3 reports a setting that was never configured as an error; that
+        // just means there is none.
+        Err(e)
+            if e.code
+                .as_deref()
+                .is_some_and(|c| NOT_CONFIGURED.contains(&c)) =>
+        {
+            none
+        }
+        Err(e) => json!(format!("⚠ {e}")),
+    };
 
     let encryption = encryption.map_err(AwsError::from_sdk).map(|o| {
         let rules = o
@@ -128,10 +148,10 @@ async fn describe(client: &Client, bucket: &str) -> Result<Detail, AwsError> {
         "Name": bucket,
         "Versioning": versioning.status().map(|s| s.as_str()).unwrap_or("Disabled"),
         "MfaDelete": versioning.mfa_delete().map(|s| s.as_str()),
-        "Encryption": or_error(encryption),
-        "PublicAccessBlock": or_error(public_access),
-        "PolicyIsPublic": or_error(is_public),
-        "Tags": or_error(tags),
+        "Encryption": or_error(encryption, json!("none")),
+        "PublicAccessBlock": or_error(public_access, json!("not configured")),
+        "PolicyIsPublic": or_error(is_public, json!("no bucket policy")),
+        "Tags": or_error(tags, json!({})),
     });
     Ok(Detail {
         raw: format!("{fields:#}"),
@@ -232,6 +252,6 @@ mod tests {
                 .unwrap()
                 .contains("AccessDenied")
         );
-        assert!(d.fields["Tags"].as_str().unwrap().contains("NoSuchTagSet"));
+        assert_eq!(d.fields["Tags"], json!({}), "no tags is not an error");
     }
 }
