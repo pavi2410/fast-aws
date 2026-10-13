@@ -67,7 +67,7 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         IdentityState::Ready(id) => Span::raw(id.account.clone()),
         IdentityState::Failed(e) => {
             let what = match e.kind {
-                ErrorKind::SsoExpired => "⚠ SSO expired",
+                ErrorKind::SessionExpired => "⚠ session expired",
                 ErrorKind::Network => "⚠ AWS unreachable",
                 ErrorKind::Throttled => "⚠ throttled",
                 _ => "⚠ credentials",
@@ -181,8 +181,11 @@ fn short(e: &AwsError) -> String {
 
 fn error_text<'a>(app: &App, err: &'a AwsError) -> Text<'a> {
     let (title, advice): (&str, String) = match err.kind {
-        ErrorKind::SsoExpired => (
-            "SSO session expired",
+        ErrorKind::SessionExpired => (
+            match app.current_profile().map(|p| &p.auth) {
+                Some(Auth::ConsoleLogin) => "Login session expired",
+                _ => "SSO session expired",
+            },
             match app.current_profile().and_then(|p| p.login_command()) {
                 Some(cmd) => format!("Press L to run `{}`.", cmd.join(" ")),
                 None => "Log in again with the AWS CLI.".into(),
@@ -514,7 +517,7 @@ mod tests {
         app.handle_msg(Msg::Identity {
             generation: 1,
             result: Err(AwsError::new(
-                ErrorKind::SsoExpired,
+                ErrorKind::SessionExpired,
                 None,
                 "the SSO token has expired and cannot be refreshed",
             )),

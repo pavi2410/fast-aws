@@ -510,7 +510,7 @@ impl App {
             Some(command) => vec![Effect::RunInTerminal(command)],
             None => {
                 self.flash = Some(format!(
-                    "profile {} doesn't use SSO; nothing to log in to",
+                    "profile {} doesn't use SSO or aws login; nothing to log in to",
                     self.profile
                 ));
                 Vec::new()
@@ -521,7 +521,7 @@ impl App {
     /// Whether the visible error is one that `L` can fix.
     pub fn login_would_help(&self) -> bool {
         self.blocking_error()
-            .is_some_and(|e| e.kind == ErrorKind::SsoExpired)
+            .is_some_and(|e| e.kind == ErrorKind::SessionExpired)
             && self
                 .current_profile()
                 .and_then(ProfileInfo::login_command)
@@ -714,7 +714,7 @@ pub(crate) mod tests {
         app.handle_msg(Msg::Identity {
             generation: 1,
             result: Err(AwsError::new(
-                ErrorKind::SsoExpired,
+                ErrorKind::SessionExpired,
                 None,
                 "the SSO token has expired",
             )),

@@ -19,6 +19,8 @@ pub enum Auth {
     SsoSession(String),
     /// SSO with `sso_start_url` on the profile itself (`aws sso login --profile <name>`).
     SsoLegacy,
+    /// Console credentials from `aws login` (`login_session = <arn>`).
+    ConsoleLogin,
     /// Assume-role that needs an MFA code. Not supported yet: aws-config can't prompt.
     Mfa,
     AssumeRole,
@@ -36,16 +38,18 @@ pub struct ProfileInfo {
 }
 
 impl ProfileInfo {
-    /// The command that logs this profile in, if it uses SSO.
+    /// The command that logs this profile in, if it uses a login session (SSO or
+    /// `aws login`).
     pub fn login_command(&self) -> Option<Vec<String>> {
-        let args = match &self.auth {
-            Auth::SsoSession(session) => ["sso", "login", "--sso-session", session.as_str()],
-            Auth::SsoLegacy => ["sso", "login", "--profile", self.name.as_str()],
+        let args: &[&str] = match &self.auth {
+            Auth::SsoSession(session) => &["sso", "login", "--sso-session", session.as_str()],
+            Auth::SsoLegacy => &["sso", "login", "--profile", self.name.as_str()],
+            Auth::ConsoleLogin => &["login", "--profile", self.name.as_str()],
             _ => return None,
         };
         Some(
             std::iter::once("aws")
-                .chain(args)
+                .chain(args.iter().copied())
                 .map(str::to_owned)
                 .collect(),
         )
@@ -137,6 +141,8 @@ fn auth_of(p: &Profile) -> Auth {
         Auth::SsoSession(session.to_owned())
     } else if p.get("sso_start_url").is_some() {
         Auth::SsoLegacy
+    } else if p.get("login_session").is_some() {
+        Auth::ConsoleLogin
     } else if p.get("mfa_serial").is_some() {
         Auth::Mfa
     } else if p.get("role_arn").is_some() {
@@ -187,6 +193,10 @@ mfa_serial = arn:aws:iam::444444444444:mfa/me
 [profile ci]
 role_arn = arn:aws:iam::555555555555:role/Ci
 source_profile = default
+
+[profile console]
+login_session = arn:aws:iam::666666666666:user/me
+region = ap-south-1
 "#;
 
     const CREDENTIALS: &str =
@@ -215,6 +225,7 @@ source_profile = default
         assert_eq!(auth("admin-mfa"), Auth::Mfa);
         assert_eq!(auth("ci"), Auth::AssumeRole);
         assert_eq!(auth("default"), Auth::StaticKeys);
+        assert_eq!(auth("console"), Auth::ConsoleLogin);
         assert_eq!(
             c.get("acme-qa").unwrap().region.as_deref(),
             Some("eu-west-1")
@@ -245,6 +256,10 @@ source_profile = default
         assert_eq!(
             cmd("old-sso").as_deref(),
             Some("aws sso login --profile old-sso")
+        );
+        assert_eq!(
+            cmd("console").as_deref(),
+            Some("aws login --profile console")
         );
         assert_eq!(cmd("ci"), None);
     }

@@ -13,8 +13,8 @@ use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 pub enum ErrorKind {
     /// The caller lacks permission for the action.
     AccessDenied,
-    /// The SSO session has expired or was never logged in; `L` fixes it.
-    SsoExpired,
+    /// The SSO or `aws login` session has expired or was never started; `L` fixes it.
+    SessionExpired,
     /// Credentials are missing, invalid or expired (non-SSO).
     Credentials,
     /// The API is rate limiting us; retries are already in progress.
@@ -138,8 +138,11 @@ pub fn classify(code: Option<&str>, message: &str) -> ErrorKind {
     ];
     if network.iter().any(|m| text.contains(m)) {
         ErrorKind::Network
-    } else if text.contains("sso") && (text.contains("token") || text.contains("session")) {
-        ErrorKind::SsoExpired
+    } else if (text.contains("sso") && (text.contains("token") || text.contains("session")))
+        || text.contains("login token")
+        || text.contains("/login/cache")
+    {
+        ErrorKind::SessionExpired
     } else if text.contains("credentials") {
         ErrorKind::Credentials
     } else if text.contains("dispatch failure") {
@@ -186,13 +189,25 @@ mod tests {
     }
 
     #[test]
+    fn console_login_failures_are_recognised_from_the_chain_text() {
+        // Messages produced by aws-config 1.12's `aws login` credentials provider.
+        for msg in [
+            "failed to load credentials: cached Login token is expired",
+            "failed to load credentials: failed to read `/home/u/.aws/login/cache/ab12.json`",
+            "failed to load credentials: failed to refresh cached Login token",
+        ] {
+            assert_eq!(classify(None, msg), ErrorKind::SessionExpired, "{msg}");
+        }
+    }
+
+    #[test]
     fn sso_failures_are_recognised_from_the_chain_text() {
         // Messages produced by aws-config 1.12's SSO token provider.
         for msg in [
             "failed to load credentials: the SSO token has expired and cannot be refreshed",
             "an error occurred while loading credentials: failed to load the cached SSO token",
         ] {
-            assert_eq!(classify(None, msg), ErrorKind::SsoExpired, "{msg}");
+            assert_eq!(classify(None, msg), ErrorKind::SessionExpired, "{msg}");
         }
     }
 
@@ -210,7 +225,7 @@ mod tests {
         let msg = "dispatch failure: other: an error occurred while loading credentials: \
                    an error occurred while loading an access token: \
                    failed to load the cached SSO token";
-        assert_eq!(classify(None, msg), ErrorKind::SsoExpired);
+        assert_eq!(classify(None, msg), ErrorKind::SessionExpired);
     }
 
     #[test]
