@@ -34,7 +34,7 @@ impl ResourceKind for Home {
     kind_info! {
         id: HOME,
         title: "fast-aws",
-        aliases: ["home"],
+        aliases: ["all"],
         // No AWS calls, so nothing to reload on a region switch.
         scope: Scope::Global,
         columns: COLUMNS,

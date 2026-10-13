@@ -12,7 +12,7 @@ use fast_aws_ui::app::App;
 const USAGE: &str = "\
 usage: fast-aws [RESOURCE] [--profile NAME] [--region REGION]
 
-  RESOURCE           resource type to open, e.g. ec2 (default: ec2)
+  RESOURCE           resource type to open, e.g. ec2 (default: a list of all)
   -p, --profile      AWS profile (default: AWS_PROFILE or `default`)
   -r, --region       AWS region (default: the profile's region)
       --read-only    never offer actions that change anything (also settable
@@ -83,6 +83,9 @@ fn registry() -> Registry {
     fast_aws_svc_ses::register(&mut registry);
     fast_aws_svc_cloudwatch::register(&mut registry);
     fast_aws_svc_cost::register(&mut registry);
+    // Last, so it lists everything above.
+    let home = fast_aws_ui::home::Home::new(&registry);
+    registry.register(home);
     registry
 }
 
@@ -101,7 +104,8 @@ async fn main() -> ExitCode {
     };
 
     let registry = registry();
-    let resource = args.resource.as_deref().unwrap_or("ec2");
+    // With no resource named, start on the home list (no AWS list call).
+    let resource = args.resource.as_deref().unwrap_or(fast_aws_ui::home::HOME);
     let Some(kind) = registry.find(resource) else {
         eprintln!("fast-aws: unknown resource type `{resource}`");
         return ExitCode::from(2);
@@ -224,5 +228,13 @@ mod tests {
     #[test]
     fn ec2_is_registered() {
         assert_eq!(registry().find("ec2").unwrap().id(), "ec2:instance");
+    }
+
+    #[test]
+    fn home_lists_every_other_kind() {
+        let registry = registry();
+        assert_eq!(registry.find("home").unwrap().id(), fast_aws_ui::home::HOME);
+        let palette = registry.palette().count();
+        assert!(palette > 30, "all services are registered ({palette})");
     }
 }
