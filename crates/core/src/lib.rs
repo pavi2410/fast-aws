@@ -2,6 +2,7 @@
 
 pub mod context;
 pub mod error;
+pub mod fmt;
 pub mod profiles;
 pub mod resource;
 

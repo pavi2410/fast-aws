@@ -27,24 +27,12 @@ pub struct Instances;
 
 #[async_trait]
 impl ResourceKind for Instances {
-    fn id(&self) -> &'static str {
-        "ec2:instance"
-    }
-
-    fn title(&self) -> &'static str {
-        "EC2 Instances"
-    }
-
-    fn aliases(&self) -> &'static [&'static str] {
-        &["ec2", "i", "instances"]
-    }
-
-    fn scope(&self) -> Scope {
-        Scope::Regional
-    }
-
-    fn columns(&self) -> &'static [Column] {
-        COLUMNS
+    fast_aws_core::kind_info! {
+        id: "ec2:instance",
+        title: "EC2 Instances",
+        aliases: ["ec2", "i", "instances"],
+        scope: Scope::Regional,
+        columns: COLUMNS,
     }
 
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> Result<Page, AwsError> {
@@ -70,7 +58,7 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
         .await
         .map_err(AwsError::from_sdk)?;
 
-    let now = crate::now_secs();
+    let now = fast_aws_core::fmt::now_secs();
     let rows = out
         .reservations()
         .iter()
@@ -124,7 +112,7 @@ fn row(i: &Instance, now: i64) -> Row {
                 .unwrap_or("-")
                 .into(),
             i.launch_time()
-                .map(|t| crate::age(now, t.secs()))
+                .map(|t| fast_aws_core::fmt::age(now, t.secs()))
                 .unwrap_or_else(|| "-".into())
                 .into(),
         ],
@@ -203,7 +191,9 @@ mod tests {
             .instance_type(InstanceType::T3Medium)
             .private_ip_address("10.0.1.12")
             .placement(Placement::builder().availability_zone("eu-west-1a").build())
-            .launch_time(DateTime::from_secs(crate::now_secs() - 41 * 86_400));
+            .launch_time(DateTime::from_secs(
+                fast_aws_core::fmt::now_secs() - 41 * 86_400,
+            ));
         if let Some(name) = name {
             b = b.tags(Tag::builder().key("Name").value(name).build());
         }
