@@ -600,6 +600,9 @@ impl App {
 
     /// `Enter`: drills into the row if it contains other resources, else describes it.
     fn open_selected(&mut self) -> Vec<Effect> {
+        if self.list.kind.id() == crate::home::HOME {
+            return self.open_from_home();
+        }
         let Some(drill) = self.list.selected_row().and_then(|r| r.drill.clone()) else {
             return self.open_detail();
         };
@@ -609,6 +612,21 @@ impl App {
         };
         let (child, load) = self.list_for(kind, Some(drill.parent));
         self.back.push(std::mem::replace(&mut self.list, child));
+        std::iter::once(Effect::CancelLoads).chain(load).collect()
+    }
+
+    /// Enter on the home screen: opens the selected resource type, with home
+    /// on the back stack.
+    fn open_from_home(&mut self) -> Vec<Effect> {
+        let Some(kind) = self
+            .list
+            .selected_row()
+            .and_then(|r| self.registry.get(&r.id))
+        else {
+            return Vec::new();
+        };
+        let (list, load) = self.list_for(kind, None);
+        self.back.push(std::mem::replace(&mut self.list, list));
         std::iter::once(Effect::CancelLoads).chain(load).collect()
     }
 
@@ -1643,6 +1661,35 @@ pub(crate) mod tests {
         press(&mut app, "g");
         assert_eq!(app.overlay, Overlay::None);
         assert!(app.flash.as_deref().unwrap().contains("nothing related"));
+    }
+
+    #[test]
+    fn home_lists_kinds_and_enter_opens_one() {
+        let mut registry = Registry::default();
+        registry.register(FakeKind);
+        registry.register(FakeChild);
+        let home = crate::home::Home::new(&registry);
+        registry.register(home);
+        let kind = registry.get(crate::home::HOME).unwrap();
+        let (mut app, _) = App::new(
+            registry,
+            catalog(),
+            "acme-dev".into(),
+            "eu-west-1".into(),
+            kind,
+        );
+        app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![Row::new("fake:thing", vec!["Things".into()])],
+                next: None,
+            }),
+        });
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.list.kind.id(), "fake:thing");
+        assert!(effects.iter().any(|e| matches!(e, Effect::LoadList { .. })));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.list.kind.id(), crate::home::HOME);
     }
 
     #[test]

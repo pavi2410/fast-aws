@@ -3,6 +3,7 @@
 pub mod app;
 pub mod cache;
 pub mod detail;
+pub mod home;
 pub mod list;
 pub mod render;
 pub mod runtime;
