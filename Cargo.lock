@@ -182,6 +182,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-apigateway"
+version = "1.120.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0fc46427eaf2b4d741043ab11e2fe0e8d0b60e5d256dbf7ccd749d5a706a310"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sdk-apigatewayv2"
+version = "1.118.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f11b20d8ed887838414961dc8e3a63943146f9c5ef3be24348f5ebe026c3a58"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-cloudwatchlogs"
 version = "1.156.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1370,6 +1420,7 @@ name = "fast-aws"
 version = "0.1.0"
 dependencies = [
  "fast-aws-core",
+ "fast-aws-svc-apigw",
  "fast-aws-svc-ec2",
  "fast-aws-svc-iam",
  "fast-aws-svc-lambda",
@@ -1392,6 +1443,19 @@ dependencies = [
  "aws-types",
  "serde_json",
  "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "fast-aws-svc-apigw"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-sdk-apigateway",
+ "aws-sdk-apigatewayv2",
+ "aws-smithy-mocks",
+ "fast-aws-core",
+ "serde_json",
  "tokio",
 ]
 

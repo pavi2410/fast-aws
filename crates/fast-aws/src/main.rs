@@ -59,6 +59,7 @@ fn registry() -> Registry {
     fast_aws_svc_lambda::register(&mut registry);
     fast_aws_svc_logs::register(&mut registry);
     fast_aws_svc_iam::register(&mut registry);
+    fast_aws_svc_apigw::register(&mut registry);
     registry
 }
 
