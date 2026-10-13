@@ -4,6 +4,8 @@
 //! ```toml
 //! read_only = true             # every profile
 //! metrics = true               # sparklines (GetMetricData is billed per metric)
+//! sparkline = "bars"           # or "dots" (the default)
+//! borders = true               # frame lists and details
 //!
 //! [profiles.generex-qa-ro]
 //! read_only = true
@@ -29,6 +31,12 @@ pub struct Config {
     /// Off unless set to `true` (or `--metrics`).
     #[serde(default)]
     pub metrics: Option<bool>,
+    /// `"dots"` (default) or `"bars"`.
+    #[serde(default)]
+    pub sparkline: crate::metrics::SparkStyle,
+    /// Draw lists and details inside a frame.
+    #[serde(default)]
+    pub borders: bool,
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfig>,
 }
@@ -144,6 +152,18 @@ mod tests {
     fn missing_file_is_the_default() {
         let config = Config::load_from(Path::new("/nonexistent/fast-aws/config.toml")).unwrap();
         assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn display_options() {
+        let config = parse("sparkline = \"bars\"\nborders = true");
+        assert_eq!(config.sparkline, crate::metrics::SparkStyle::Bars);
+        assert!(config.borders);
+        assert_eq!(
+            Config::default().sparkline,
+            crate::metrics::SparkStyle::Dots
+        );
+        assert!(toml::from_str::<Config>("sparkline = \"lines\"").is_err());
     }
 
     #[test]
