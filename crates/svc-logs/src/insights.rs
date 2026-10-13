@@ -118,6 +118,12 @@ async fn run(
         .await
         .map_err(AwsError::from_sdk)?;
     let id = started.query_id().unwrap_or_default().to_owned();
+    // If this future is dropped (the view was left), stop the query so it
+    // doesn't keep scanning, and billing, unseen.
+    let mut guard = StopOnDrop {
+        client: Some(client.clone()),
+        id: id.clone(),
+    };
     let deadline = tokio::time::Instant::now() + TIMEOUT;
     loop {
         let out = client
@@ -128,11 +134,13 @@ async fn run(
             .map_err(AwsError::from_sdk)?;
         match out.status() {
             Some(QueryStatus::Complete) => {
+                guard.disarm();
                 let mut rows = vec![summary(&out)];
                 rows.extend(out.results().iter().map(|r| row(r)));
                 return Ok(Page { rows, next: None });
             }
             Some(QueryStatus::Failed | QueryStatus::Cancelled | QueryStatus::Timeout) => {
+                guard.disarm();
                 let status = out.status().map(|s| s.as_str()).unwrap_or_default();
                 return Err(AwsError::new(
                     ErrorKind::Other,
@@ -142,6 +150,7 @@ async fn run(
             }
             _ if tokio::time::Instant::now() >= deadline => {
                 // Stop it so it doesn't keep scanning (and billing) unseen.
+                guard.disarm();
                 let _ = client.stop_query().query_id(&id).send().await;
                 return Err(AwsError::new(
                     ErrorKind::Other,
@@ -150,6 +159,31 @@ async fn run(
                 ));
             }
             _ => tokio::time::sleep(poll).await,
+        }
+    }
+}
+
+/// Stops a running query when dropped, unless disarmed first.
+struct StopOnDrop {
+    client: Option<Client>,
+    id: String,
+}
+
+impl StopOnDrop {
+    fn disarm(&mut self) {
+        self.client = None;
+    }
+}
+
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        if let (Some(client), Ok(runtime)) =
+            (self.client.take(), tokio::runtime::Handle::try_current())
+        {
+            let id = std::mem::take(&mut self.id);
+            runtime.spawn(async move {
+                let _ = client.stop_query().query_id(id).send().await;
+            });
         }
     }
 }
@@ -293,6 +327,64 @@ mod tests {
         assert_eq!(page.rows[1].cells[1].text, "{\"level\":\"error\"}");
         let d = describe_result(&page.rows[1].id);
         assert_eq!(d.fields["@message"]["level"], "error");
+    }
+
+    #[tokio::test]
+    async fn leaving_mid_query_stops_it() {
+        let start = mock!(Client::start_query)
+            .then_output(|| StartQueryOutput::builder().query_id("q").build());
+        let running = mock!(Client::get_query_results).then_output(|| {
+            GetQueryResultsOutput::builder()
+                .status(QueryStatus::Running)
+                .build()
+        });
+        let stop = mock!(Client::stop_query)
+            .match_requests(|r| r.query_id() == Some("q"))
+            .then_output(|| {
+                aws_sdk_cloudwatchlogs::operation::stop_query::StopQueryOutput::builder()
+                    .success(true)
+                    .build()
+            });
+        let client = mock_client!(
+            aws_sdk_cloudwatchlogs,
+            RuleMode::MatchAny,
+            [&start, &running, &stop]
+        );
+
+        // Poll a few times, then drop the future, as leaving the view does.
+        let query = run(
+            &client,
+            "g",
+            "fields @message",
+            0,
+            1,
+            Duration::from_millis(5),
+        );
+        let _ = tokio::time::timeout(Duration::from_millis(30), query).await;
+        tokio::time::sleep(Duration::from_millis(50)).await; // let the stop run
+        assert_eq!(stop.num_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_finished_query_is_not_stopped() {
+        let start = mock!(Client::start_query)
+            .then_output(|| StartQueryOutput::builder().query_id("q").build());
+        let done = mock!(Client::get_query_results).then_output(|| {
+            GetQueryResultsOutput::builder()
+                .status(QueryStatus::Complete)
+                .build()
+        });
+        let stop = mock!(Client::stop_query).then_output(|| {
+            aws_sdk_cloudwatchlogs::operation::stop_query::StopQueryOutput::builder().build()
+        });
+        let client = mock_client!(
+            aws_sdk_cloudwatchlogs,
+            RuleMode::MatchAny,
+            [&start, &done, &stop]
+        );
+        run(&client, "g", "q", 0, 1, Duration::ZERO).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(stop.num_calls(), 0);
     }
 
     #[tokio::test]
