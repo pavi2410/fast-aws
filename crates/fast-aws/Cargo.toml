@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 fast-aws-core.workspace = true
 fast-aws-svc-ec2.workspace = true
+fast-aws-svc-logs.workspace = true
 fast-aws-svc-lambda.workspace = true
 fast-aws-svc-s3.workspace = true
 fast-aws-ui.workspace = true
