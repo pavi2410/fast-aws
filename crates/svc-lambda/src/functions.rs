@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use aws_sdk_lambda::Client;
 use aws_sdk_lambda::types::FunctionConfiguration;
+use fast_aws_core::arn::Arn;
 use fast_aws_core::fmt::{bytes, date_part, or_dash};
 use fast_aws_core::{
     AwsError, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, kind_info,
@@ -48,7 +49,11 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
         .await
         .map_err(AwsError::from_sdk)?;
     Ok(Page {
-        rows: out.functions().iter().map(row).collect(),
+        rows: out
+            .functions()
+            .iter()
+            .map(|f| relations(row(f), f))
+            .collect(),
         next: out.next_marker,
     })
 }
@@ -162,6 +167,37 @@ async fn describe(client: &Client, name: &str) -> Result<Detail, AwsError> {
     })
 }
 
+/// What `g` offers from a function: its role, its logs, its triggers and its
+/// security groups.
+fn relations(mut row: Row, f: &FunctionConfiguration) -> Row {
+    let name = f.function_name().unwrap_or_default();
+    if let Some(role) = f.role().and_then(Arn::parse) {
+        row = row.relate(format!("role {}", role.name()), "iam:role", role.name());
+    }
+    // Functions can log to a group of their choosing; the default is by name.
+    let group = f
+        .logging_config()
+        .and_then(|l| l.log_group())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("/aws/lambda/{name}"));
+    let parent = Parent {
+        id: group.clone(),
+        label: group.clone(),
+        region: None,
+    };
+    row = row
+        .relate_inside(format!("logs {group}"), "logs:stream", parent)
+        .relate("its triggers", "lambda:esm", name);
+    for sg in f
+        .vpc_config()
+        .map(|v| v.security_group_ids())
+        .unwrap_or_default()
+    {
+        row = row.relate(format!("security group {sg}"), "ec2:sg", sg);
+    }
+    row
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +247,32 @@ mod tests {
                 "2.0 KiB",
                 "2026-10-12"
             ]
+        );
+    }
+
+    #[test]
+    fn g_offers_role_logs_and_triggers() {
+        let f = FunctionConfiguration::builder()
+            .function_name("thumbs")
+            .role("arn:aws:iam::1:role/service-role/thumbs-exec")
+            .build();
+        let row = relations(row(&f), &f);
+        let got: Vec<_> = row
+            .relations
+            .iter()
+            .map(|r| (r.label.as_str(), r.kind))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("role thumbs-exec", "iam:role"),
+                ("logs /aws/lambda/thumbs", "logs:stream"),
+                ("its triggers", "lambda:esm"),
+            ]
+        );
+        assert_eq!(
+            row.relations[1].parent.as_ref().unwrap().id,
+            "/aws/lambda/thumbs"
         );
     }
 

@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use aws_sdk_lambda::Client;
 use aws_sdk_lambda::types::EventSourceMappingConfiguration;
+use fast_aws_core::arn::Arn;
 use fast_aws_core::fmt::{age_of, or_dash};
 use fast_aws_core::{
     AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
@@ -76,7 +77,11 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
         .await
         .map_err(AwsError::from_sdk)?;
     Ok(Page {
-        rows: out.event_source_mappings().iter().map(row).collect(),
+        rows: out
+            .event_source_mappings()
+            .iter()
+            .map(|m| relations(row(m), m))
+            .collect(),
         next: out.next_marker,
     })
 }
@@ -102,6 +107,26 @@ fn row(m: &EventSourceMappingConfiguration) -> Row {
             or_dash(m.uuid()).into(),
         ],
     )
+}
+
+/// What `g` offers from a trigger: its function, and its DynamoDB table when
+/// the source is a table stream.
+fn relations(mut row: Row, m: &EventSourceMappingConfiguration) -> Row {
+    if let Some(function) = m.function_arn().and_then(Arn::parse) {
+        row = row.relate(
+            format!("function {}", function.name()),
+            "lambda:function",
+            function.name(),
+        );
+    }
+    if let Some(source) = m.event_source_arn().and_then(Arn::parse)
+        && source.service == "dynamodb"
+    {
+        // table/<name>/stream/<label>
+        let table = source.resource.split('/').nth(1).unwrap_or_default();
+        row = row.relate(format!("table {table}"), "dynamodb:table", table);
+    }
+    row
 }
 
 #[cfg(test)]
@@ -131,5 +156,28 @@ mod tests {
         assert_eq!(cells[..4], ["jobs", "worker", "Enabled", "10"]);
         assert_eq!(page.rows[0].cells[2].tone, Tone::Good);
         assert_eq!(page.next, None);
+    }
+
+    #[test]
+    fn a_table_stream_trigger_leads_to_its_table() {
+        let m = EventSourceMappingConfiguration::builder()
+            .event_source_arn(
+                "arn:aws:dynamodb:eu-west-1:1:table/orders/stream/2026-10-01T00:00:00.000",
+            )
+            .function_arn("arn:aws:lambda:eu-west-1:1:function:on-order")
+            .build();
+        let row = relations(row(&m), &m);
+        let got: Vec<_> = row
+            .relations
+            .iter()
+            .map(|r| (r.kind, r.filter.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("lambda:function", Some("on-order")),
+                ("dynamodb:table", Some("orders"))
+            ]
+        );
     }
 }
