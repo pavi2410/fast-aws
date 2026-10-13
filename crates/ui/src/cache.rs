@@ -64,6 +64,17 @@ impl Cache {
         self.entries.insert(key, entry);
     }
 
+    /// Every cached list for one profile and region, with its key.
+    pub fn lists_for<'a>(
+        &'a self,
+        profile: &'a str,
+        region: &'a str,
+    ) -> impl Iterator<Item = (&'a CacheKey, &'a Entry)> + 'a {
+        self.entries
+            .iter()
+            .filter(move |(k, _)| k.profile == profile && k.region == region)
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use fast_aws_core::profiles::{ProfileCatalog, ProfileInfo};
 use fast_aws_core::{
-    AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Parent, Registry,
+    AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Parent, Registry, Relation,
     ResourceKind, Scope,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -116,7 +116,7 @@ pub enum Overlay {
     Profiles(usize),
     /// `R`: index into [`REGIONS`].
     Regions(usize),
-    /// `g`: index into the selected row's relations.
+    /// `g`: index into [`App::relations_menu`].
     Relations(usize),
     Help,
 }
@@ -145,6 +145,9 @@ pub struct App {
     pub should_quit: bool,
     /// Which action classes the current profile allows; see [`Guard`].
     pub guard: Guard,
+    /// What the open `g` menu lists: the row's own relations, then reverse ones
+    /// found in cached lists.
+    pub relations_menu: Vec<Relation>,
     cache: Cache,
     config: Config,
     read_only_flag: bool,
@@ -176,6 +179,7 @@ impl App {
             should_quit: false,
             guard: Guard::new(&Config::default(), "", false),
             cache: Cache::default(),
+            relations_menu: Vec::new(),
             config: Config::default(),
             read_only_flag: false,
             next_generation: 2,
@@ -341,9 +345,11 @@ impl App {
             }
             KeyCode::Char('L') => self.login(),
             KeyCode::Char('g') => {
-                match self.list.selected_row().map(|r| r.relations.len()) {
-                    Some(n) if n > 0 => self.overlay = Overlay::Relations(0),
-                    _ => self.flash = Some("nothing related to go to from here".into()),
+                self.relations_menu = self.relations_of_selected();
+                if self.relations_menu.is_empty() {
+                    self.flash = Some("nothing related to go to from here".into());
+                } else {
+                    self.overlay = Overlay::Relations(0);
                 }
                 Vec::new()
             }
@@ -647,8 +653,48 @@ impl App {
         Vec::new()
     }
 
+    /// The selected row's relations, then reverse ones: rows in cached lists
+    /// (same profile and region) whose relations point at it, such as the
+    /// functions that use a role. Those are only as complete as what's loaded.
+    fn relations_of_selected(&self) -> Vec<Relation> {
+        let Some(row) = self.list.selected_row() else {
+            return Vec::new();
+        };
+        let mut menu = row.relations.clone();
+        let kind = self.list.kind.id();
+        let names_this = |r: &Relation| {
+            r.kind == kind
+                && r.filter
+                    .as_deref()
+                    .is_some_and(|f| f == row.id || row.cells.first().is_some_and(|c| c.text == f))
+        };
+        for (key, entry) in self.cache.lists_for(&self.profile, &self.region) {
+            let title = self.registry.get(key.kind).map_or(key.kind, |k| k.title());
+            for source in &entry.rows {
+                if source.relations.iter().any(names_this) {
+                    let name = source
+                        .cells
+                        .first()
+                        .map_or(source.id.as_str(), |c| c.text.as_str());
+                    let parent = key.parent.as_ref().map(|id| Parent {
+                        id: id.clone(),
+                        label: id.clone(),
+                        region: None,
+                    });
+                    menu.push(Relation {
+                        label: format!("used by {name} ({title}, from loaded lists)"),
+                        kind: key.kind,
+                        parent,
+                        filter: Some(source.id.clone()),
+                    });
+                }
+            }
+        }
+        menu
+    }
+
     fn relations_key(&mut self, key: KeyEvent, at: usize) -> Vec<Effect> {
-        let count = self.list.selected_row().map_or(0, |r| r.relations.len());
+        let count = self.relations_menu.len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => self.overlay = Overlay::None,
             KeyCode::Char('j') | KeyCode::Down => {
@@ -669,12 +715,7 @@ impl App {
     /// Jumps to the selected row's `at`-th relation. The current list goes on
     /// the back stack, so `Esc` returns to it.
     fn follow(&mut self, at: usize) -> Vec<Effect> {
-        let Some(relation) = self
-            .list
-            .selected_row()
-            .and_then(|r| r.relations.get(at))
-            .cloned()
-        else {
+        let Some(relation) = self.relations_menu.get(at).cloned() else {
             return Vec::new();
         };
         let Some(kind) = self.registry.get(relation.kind) else {
@@ -1122,6 +1163,39 @@ pub(crate) mod tests {
         press(&mut app, "gj");
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.list.parent, Some(part_parent()));
+    }
+
+    #[test]
+    fn g_also_finds_what_points_here_in_loaded_lists() {
+        let mut app = app(); // Things: a (web-1), b (db) are cached
+        // A loaded list of parts where p1 relates to thing "db".
+        app.handle_key(key(KeyCode::Enter));
+        app.handle_msg(Msg::Page {
+            generation: 2,
+            result: Ok(Page {
+                rows: vec![row("p1", "bolt").relate("thing db", "fake:thing", "db")],
+                next: None,
+            }),
+        });
+        app.handle_key(key(KeyCode::Esc));
+        press(&mut app, "j"); // db
+        press(&mut app, "g");
+        assert_eq!(app.relations_menu.len(), 1);
+        assert_eq!(
+            app.relations_menu[0].label,
+            "used by bolt (Parts, from loaded lists)"
+        );
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.list.kind.id(), "fake:part");
+        assert_eq!(
+            app.list.parent,
+            Some(Parent {
+                id: "a".into(),
+                label: "a".into(),
+                region: None
+            })
+        );
+        assert_eq!(app.list.filter, "p1");
     }
 
     #[test]

@@ -487,11 +487,7 @@ fn draw_profiles(frame: &mut Frame, area: Rect, app: &App, at: usize) {
 }
 
 fn draw_relations(frame: &mut Frame, area: Rect, app: &App, at: usize) {
-    let relations = app
-        .list
-        .selected_row()
-        .map(|r| r.relations.as_slice())
-        .unwrap_or_default();
+    let relations = &app.relations_menu;
     let lines: Vec<Line> = relations
         .iter()
         .enumerate()
@@ -507,7 +503,7 @@ fn draw_relations(frame: &mut Frame, area: Rect, app: &App, at: usize) {
             Line::from(spans).style(line.style)
         })
         .collect();
-    let inner = popup(frame, area, 64, lines.len() as u16 + 2, "go to");
+    let inner = popup(frame, area, 96, lines.len() as u16 + 2, "go to");
     frame.render_widget(
         Paragraph::new(lines).scroll((scroll_to(at, inner.height), 0)),
         inner,
