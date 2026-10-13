@@ -31,6 +31,33 @@ can be done just before the phase that needs them.
 
 The "under 1 s from cache" target moves to Phase 2, where the cache lands.
 
+## Progress note (2026-10-13)
+
+At the user's request, **basic read-only list + describe for every in-scope
+service** (Phase 3's breadth) was done right after Phase 1, ahead of Phase 2's
+special views. Done so far:
+
+- Drill-in navigation with breadcrumbs, per-row and per-parent regions, lists that
+  pause after 5 pages (`n` for more), and a ranked, scrollable palette.
+- EC2 (instances, security groups, VPCs → subnets, volumes, AMIs, key pairs,
+  Elastic IPs), S3 (buckets → objects by prefix), Lambda (functions, event source
+  mappings), CloudWatch Logs (groups → streams → events), CloudWatch alarms, IAM
+  (roles, users, groups, policies), API Gateway (REST + HTTP/WS APIs → routes),
+  CloudFront (distributions → invalidations), DynamoDB (tables), RDS (clusters and
+  instances, snapshots), SSM parameters, Secrets Manager (metadata only), EventBridge
+  (buses → rules, Scheduler schedules), Cognito (user pools → users, identity
+  pools), SES (account, identities), Cost Explorer (month to date by service).
+
+Still open from Phases 2 and 3:
+- the cache
+- sparklines and metric charts
+- live tail and Insights
+- the Miller-column browser
+- the DynamoDB item explorer
+- the IAM effective-permissions view and simulator
+- relations (`g`)
+- revealing secrets
+
 ## Phase 2: Read-only core (the daily drivers)
 
 These four account for most console visits, and Lambda depends on Logs.
