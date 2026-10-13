@@ -144,6 +144,34 @@ pub struct Relation {
     pub filter: Option<String>,
 }
 
+/// A question a row can be asked: a key opens a prompt, and the answer opens a
+/// list of `kind` whose parent ID is `parent_id`, a newline, then the answer.
+/// (The IAM simulator: `S` on a role asks which actions to test.)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Query {
+    pub key: char,
+    /// Shown in the prompt, e.g. `actions to test`.
+    pub prompt: &'static str,
+    pub kind: &'static str,
+    pub parent_id: String,
+}
+
+impl Query {
+    /// The parent of the list that answers `input`.
+    pub fn parent(&self, input: &str) -> Parent {
+        Parent {
+            id: format!("{}\n{input}", self.parent_id),
+            label: input.to_owned(),
+            region: None,
+        }
+    }
+
+    /// Splits a parent ID made by [`Query::parent`] back into its two parts.
+    pub fn split(parent_id: &str) -> (&str, &str) {
+        parent_id.split_once('\n').unwrap_or((parent_id, ""))
+    }
+}
+
 /// One line in a resource list: a stable ID plus one cell per column.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
@@ -156,6 +184,8 @@ pub struct Row {
     pub region: Option<String>,
     /// Related resources, taken from fields the list call already returned.
     pub relations: Vec<Relation>,
+    /// Questions this row can be asked (see [`Query`]).
+    pub queries: Vec<Query>,
 }
 
 impl Row {
@@ -166,7 +196,25 @@ impl Row {
             drill: None,
             region: None,
             relations: Vec::new(),
+            queries: Vec::new(),
         }
+    }
+
+    /// Lets `key` on this row ask `prompt`, answered by a list of `kind`.
+    pub fn query(
+        mut self,
+        key: char,
+        prompt: &'static str,
+        kind: &'static str,
+        parent_id: &str,
+    ) -> Self {
+        self.queries.push(Query {
+            key,
+            prompt,
+            kind,
+            parent_id: parent_id.to_owned(),
+        });
+        self
     }
 
     /// Adds a related resource: the `kind` list, filtered to `filter`.
@@ -432,6 +480,19 @@ mod tests {
         assert_eq!(r.find("secu").unwrap().id(), "ec2:sg");
         assert!(r.find("lambda").is_none());
         assert!(r.find(":").is_none());
+    }
+
+    #[test]
+    fn query_parents_carry_the_answer() {
+        let q = Query {
+            key: 'S',
+            prompt: "actions",
+            kind: "iam:simulation",
+            parent_id: "arn:r".into(),
+        };
+        let parent = q.parent("s3:GetObject");
+        assert_eq!(parent.label, "s3:GetObject");
+        assert_eq!(Query::split(&parent.id), ("arn:r", "s3:GetObject"));
     }
 
     #[test]
