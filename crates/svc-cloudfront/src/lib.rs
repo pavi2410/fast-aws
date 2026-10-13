@@ -113,7 +113,7 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
         .filter(|_| list.is_truncated())
         .map(str::to_owned);
     Ok(Page {
-        rows: list.items().iter().map(row).collect(),
+        rows: list.items().iter().map(|d| origins(row(d), d)).collect(),
         next,
     })
 }
@@ -315,6 +315,17 @@ fn invalidation_row(i: &InvalidationSummary) -> Row {
     )
 }
 
+/// What `g` offers from a distribution: the S3 buckets it serves from.
+fn origins(mut row: Row, d: &DistributionSummary) -> Row {
+    for o in d.origins().map(|o| o.items()).unwrap_or_default() {
+        // `<bucket>.s3.amazonaws.com` or `<bucket>.s3.<region>.amazonaws.com`.
+        if let Some((bucket, _)) = o.domain_name().split_once(".s3.") {
+            row = row.relate(format!("bucket {bucket}"), "s3:bucket", bucket);
+        }
+    }
+    row
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,6 +420,11 @@ mod tests {
         assert_eq!(
             page.rows[0].drill.as_ref().unwrap().kind,
             "cloudfront:invalidation"
+        );
+        let origin = &page.rows[0].relations[0];
+        assert_eq!(
+            (origin.kind, origin.filter.as_deref()),
+            ("s3:bucket", Some("site"))
         );
     }
 }
