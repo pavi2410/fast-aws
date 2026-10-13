@@ -335,6 +335,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-eventbridge"
+version = "1.122.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b665bae2c80672a198b5abb9ab34d62eebb933f95281e878369a20b1d1f73f0"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-iam"
 version = "1.128.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -448,6 +473,31 @@ dependencies = [
  "sha2 0.11.1",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "aws-sdk-scheduler"
+version = "1.114.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe0488713a2b962ef13996b6ff68f8857e70d63b093f7b1b3979eef108910dbb"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
 ]
 
 [[package]]
@@ -1553,6 +1603,7 @@ dependencies = [
  "fast-aws-svc-cloudfront",
  "fast-aws-svc-dynamodb",
  "fast-aws-svc-ec2",
+ "fast-aws-svc-events",
  "fast-aws-svc-iam",
  "fast-aws-svc-lambda",
  "fast-aws-svc-logs",
@@ -1623,6 +1674,19 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "aws-sdk-ec2",
+ "aws-smithy-mocks",
+ "fast-aws-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fast-aws-svc-events"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-sdk-eventbridge",
+ "aws-sdk-scheduler",
  "aws-smithy-mocks",
  "fast-aws-core",
  "serde_json",

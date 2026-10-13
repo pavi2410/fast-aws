@@ -1,0 +1,23 @@
+[package]
+name = "fast-aws-svc-events"
+description = "events resource kinds for fast-aws"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+aws-sdk-eventbridge.workspace = true
+aws-sdk-scheduler.workspace = true
+fast-aws-core.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+aws-sdk-eventbridge = { workspace = true, features = ["test-util"] }
+aws-sdk-scheduler = { workspace = true, features = ["test-util"] }
+aws-smithy-mocks.workspace = true
+
+[lints]
+workspace = true

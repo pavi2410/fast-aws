@@ -65,6 +65,7 @@ fn registry() -> Registry {
     fast_aws_svc_ssm::register(&mut registry);
     fast_aws_svc_secrets::register(&mut registry);
     fast_aws_svc_cloudfront::register(&mut registry);
+    fast_aws_svc_events::register(&mut registry);
     registry
 }
 
