@@ -148,7 +148,9 @@ async fn main() -> ExitCode {
     let (mut app, effects) = App::new(registry, catalog, profile, region, kind);
     app.set_safety(config, args.read_only);
     app.set_metrics(metrics);
-    let source = metrics.then(|| Arc::new(CloudWatchMetrics) as Arc<dyn MetricSource>);
+    // Always available, so sparklines can be turned on from the settings panel;
+    // nothing is fetched while they're off.
+    let source = Some(Arc::new(CloudWatchMetrics) as Arc<dyn MetricSource>);
     match fast_aws_ui::runtime::run(app, effects, factory, source).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
