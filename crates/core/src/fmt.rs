@@ -33,7 +33,13 @@ pub fn utc_millis(ms: i64) -> String {
     use aws_smithy_types::date_time::{DateTime, Format};
     DateTime::from_millis(ms)
         .fmt(Format::DateTime)
-        .map(|s| s.replace('T', " ").trim_end_matches('Z').chars().take(19).collect())
+        .map(|s| {
+            s.replace('T', " ")
+                .trim_end_matches('Z')
+                .chars()
+                .take(19)
+                .collect()
+        })
         .unwrap_or_else(|_| ms.to_string())
 }
 
@@ -140,7 +146,10 @@ mod tests {
     fn utc_timestamps() {
         assert_eq!(utc_millis(0), "1970-01-01 00:00:00");
         assert_eq!(utc_millis(1_760_346_000_123), "2025-10-13 09:00:00");
-        assert_eq!(date_part(Some("2026-10-12T09:13:44.000+0000")), "2026-10-12");
+        assert_eq!(
+            date_part(Some("2026-10-12T09:13:44.000+0000")),
+            "2026-10-12"
+        );
         assert_eq!(date_part(None), "-");
     }
 
