@@ -332,7 +332,11 @@ async fn list_schedules(client: &SchedulerClient, next: Option<String>) -> Resul
         .await
         .map_err(AwsError::from_sdk)?;
     Ok(Page {
-        rows: out.schedules().iter().map(schedule_row).collect(),
+        rows: out
+            .schedules()
+            .iter()
+            .map(|s| schedule_target(schedule_row(s), s))
+            .collect(),
         next: out.next_token,
     })
 }
@@ -351,6 +355,22 @@ fn schedule_row(s: &ScheduleSummary) -> Row {
             age_of(s.last_modification_date().map(|d| d.secs())).into(),
         ],
     )
+}
+
+/// What `g` offers from a schedule: its Lambda target.
+fn schedule_target(row: Row, s: &ScheduleSummary) -> Row {
+    let arn = s
+        .target()
+        .map(|t| t.arn())
+        .and_then(fast_aws_core::arn::Arn::parse);
+    match arn {
+        Some(a) if a.service == "lambda" => row.relate(
+            format!("function {}", a.name()),
+            "lambda:function",
+            a.name(),
+        ),
+        _ => row,
+    }
 }
 
 #[cfg(test)]
@@ -436,6 +456,10 @@ mod tests {
         let client = mock_client!(aws_sdk_scheduler, [&rule]);
         let page = list_schedules(&client, None).await.unwrap();
         assert_eq!(page.rows[0].id, "billing/report");
+        assert_eq!(
+            page.rows[0].relations[0].filter.as_deref(),
+            Some("make-report")
+        );
         assert_eq!(page.rows[0].cells[3].text, "make-report");
         assert_eq!(page.rows[0].cells[2].tone, Tone::Good);
     }
