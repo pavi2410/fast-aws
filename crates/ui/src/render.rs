@@ -151,6 +151,10 @@ fn draw_list_title(frame: &mut Frame, area: Rect, app: &App) {
         format!("cached {age} ago")
     });
     let status = match (&list.status, cached) {
+        (LoadStatus::Loading, _) if list.kind.follow_every().is_some() => Span::styled(
+            format!("● live · {} events ", list.total()),
+            Style::new().fg(Color::Green),
+        ),
         (LoadStatus::Loading, Some(cached)) => {
             Span::styled(format!("{cached} · refreshing… "), DIM)
         }

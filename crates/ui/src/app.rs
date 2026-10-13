@@ -365,8 +365,17 @@ impl App {
             Msg::Page { generation, result } if generation == self.list.generation => {
                 match result {
                     Ok(page) => {
-                        let last = page.next.is_none();
+                        let following = self.list.kind.follow_every().is_some();
+                        let at_end = self
+                            .list
+                            .selected_index()
+                            .is_none_or(|i| i + 1 >= self.list.visible_rows().len());
+                        // A followed list never finishes; its pages only add.
+                        let last = page.next.is_none() && !following;
                         self.list.push_page(page.rows, last);
+                        if following && at_end {
+                            self.list.select_last();
+                        }
                         self.remember_list();
                     }
                     Err(e) => self.list.fail(e),
@@ -980,8 +989,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::list::LoadStatus;
     use crate::list::tests::{FakeChild, FakeKind, row};
-    use fast_aws_core::Parent;
     use fast_aws_core::profiles::Auth;
+    use fast_aws_core::{Parent, Row};
 
     pub(crate) fn catalog() -> ProfileCatalog {
         let p = |name: &str, region: Option<&str>, auth: Auth| ProfileInfo {
@@ -1335,6 +1344,75 @@ pub(crate) mod tests {
         ) -> Result<Detail, AwsError> {
             unreachable!()
         }
+    }
+
+    /// A kind that follows something live, like a log tail.
+    struct FakeTail;
+
+    #[async_trait::async_trait]
+    impl ResourceKind for FakeTail {
+        fn id(&self) -> &'static str {
+            "fake:tail"
+        }
+        fn title(&self) -> &'static str {
+            "Tail"
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            &["tail"]
+        }
+        fn scope(&self) -> Scope {
+            Scope::Regional
+        }
+        fn columns(&self) -> &'static [fast_aws_core::Column] {
+            &[]
+        }
+        fn follow_every(&self) -> Option<Duration> {
+            Some(Duration::from_secs(2))
+        }
+        async fn list(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: &fast_aws_core::ListQuery,
+        ) -> Result<Page, AwsError> {
+            Ok(Page::default())
+        }
+        async fn describe(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: Option<&Parent>,
+            _: &str,
+        ) -> Result<Detail, AwsError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn a_followed_list_keeps_loading_and_stays_at_the_end() {
+        let mut app = app();
+        app.registry.register(FakeTail);
+        press(&mut app, ":tail");
+        app.handle_key(key(KeyCode::Enter));
+        let generation = app.list.generation;
+        let page = |rows: Vec<Row>| Msg::Page {
+            generation,
+            result: Ok(Page {
+                rows,
+                next: Some("t".into()),
+            }),
+        };
+        app.handle_msg(page(vec![row("e1", "x"), row("e2", "y")]));
+        assert!(app.list.is_loading(), "following never finishes");
+        assert_eq!(app.list.selected_row().unwrap().id, "e2");
+        app.handle_msg(page(vec![row("e3", "z")]));
+        assert_eq!(
+            app.list.selected_row().unwrap().id,
+            "e3",
+            "stays at the newest"
+        );
+
+        press(&mut app, "k"); // reading an older one (e2): stays put
+        app.handle_msg(page(vec![row("e4", "w")]));
+        assert_eq!(app.list.selected_row().unwrap().id, "e2");
     }
 
     #[test]

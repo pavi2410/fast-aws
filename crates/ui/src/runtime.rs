@@ -193,6 +193,9 @@ async fn load_list(
         parent: target.parent.clone(),
         next: from,
     };
+    if let Some(every) = target.kind.follow_every() {
+        return follow(target, ctx, query, every, generation, tx).await;
+    }
     for _ in 0..MAX_PAGES {
         let result = target.kind.list(&ctx, &query).await;
         let next = result.as_ref().ok().and_then(|p| p.next.clone());
@@ -209,6 +212,34 @@ async fn load_list(
     }
     if let Some(next) = query.next {
         let _ = tx.send(Input::Msg(Msg::Paused { generation, next }));
+    }
+}
+
+/// Keeps asking a following kind for more, every `every`, until the view is
+/// left (the task is aborted) or a call fails.
+async fn follow(
+    target: Target,
+    ctx: Ctx,
+    mut query: ListQuery,
+    every: Duration,
+    generation: u64,
+    tx: UnboundedSender<Input>,
+) {
+    loop {
+        let result = target.kind.list(&ctx, &query).await;
+        let failed = result.is_err();
+        let next = result.as_ref().ok().and_then(|p| p.next.clone());
+        if tx
+            .send(Input::Msg(Msg::Page { generation, result }))
+            .is_err()
+            || failed
+        {
+            return;
+        }
+        if next.is_some() {
+            query.next = next;
+        }
+        tokio::time::sleep(every).await;
     }
 }
 

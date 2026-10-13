@@ -334,6 +334,14 @@ pub trait ResourceKind: Send + Sync {
         true
     }
 
+    /// For kinds that follow something live (a log tail): how often to ask for
+    /// more after the first page. The list then never stops loading; each
+    /// page's `next` token is where the following call continues, and leaving
+    /// the view stops it.
+    fn follow_every(&self) -> Option<std::time::Duration> {
+        None
+    }
+
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> Result<Page, AwsError>;
     async fn describe(
         &self,
