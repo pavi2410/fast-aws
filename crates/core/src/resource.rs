@@ -133,6 +133,17 @@ pub struct Drill {
     pub parent: Parent,
 }
 
+/// A related resource that `g` can jump to: a list of `kind` (inside `parent`,
+/// if given), filtered to `filter` so the related item is the one selected.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Relation {
+    /// Shown in the `g` menu, e.g. `role thumbs-exec`.
+    pub label: String,
+    pub kind: &'static str,
+    pub parent: Option<Parent>,
+    pub filter: Option<String>,
+}
+
 /// One line in a resource list: a stable ID plus one cell per column.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
@@ -143,6 +154,8 @@ pub struct Row {
     /// The region the resource lives in, when its calls can't use the current one
     /// (S3 buckets). Describe goes there.
     pub region: Option<String>,
+    /// Related resources, taken from fields the list call already returned.
+    pub relations: Vec<Relation>,
 }
 
 impl Row {
@@ -152,7 +165,37 @@ impl Row {
             cells,
             drill: None,
             region: None,
+            relations: Vec::new(),
         }
+    }
+
+    /// Adds a related resource: the `kind` list, filtered to `filter`.
+    pub fn relate(mut self, label: impl Into<String>, kind: &'static str, filter: &str) -> Self {
+        if !filter.is_empty() {
+            self.relations.push(Relation {
+                label: label.into(),
+                kind,
+                parent: None,
+                filter: Some(filter.to_owned()),
+            });
+        }
+        self
+    }
+
+    /// Adds a related list to open inside `parent` (a log group's streams).
+    pub fn relate_inside(
+        mut self,
+        label: impl Into<String>,
+        kind: &'static str,
+        parent: Parent,
+    ) -> Self {
+        self.relations.push(Relation {
+            label: label.into(),
+            kind,
+            parent: Some(parent),
+            filter: None,
+        });
+        self
     }
 
     /// Sends describe calls for this row to `region`.
