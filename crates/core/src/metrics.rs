@@ -47,19 +47,30 @@ pub trait MetricSource: Send + Sync {
     ) -> Result<HashMap<String, Vec<f64>>, AwsError>;
 }
 
-/// `▁▂▅█▃ 14` or `▁▁▁▁ 0%`: the points scaled to their own maximum, then the
-/// summary.
+/// A dotted sparkline then the summary, e.g. `⣀⣠⣴⣾ 14`: braille dots, two
+/// points per character, each one to four dots high (one dot for zero),
+/// scaled to the line's own maximum.
 pub fn sparkline(points: &[f64], summary: Summary, unit: &str) -> String {
-    const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    // Braille dot bits, bottom to top, for the left and right columns.
+    const LEFT: [u32; 4] = [0x40, 0x04, 0x02, 0x01];
+    const RIGHT: [u32; 4] = [0x80, 0x20, 0x10, 0x08];
     let max = points.iter().copied().fold(0.0_f64, f64::max);
-    let bars: String = points
-        .iter()
-        .map(|p| {
-            if max <= 0.0 {
-                BARS[0]
-            } else {
-                BARS[((p / max) * 7.0).round().clamp(0.0, 7.0) as usize]
+    let height = |p: f64| -> usize {
+        if max <= 0.0 || p <= 0.0 {
+            1
+        } else {
+            1 + ((p / max) * 3.0).round().clamp(0.0, 3.0) as usize
+        }
+    };
+    let column = |bits: &[u32; 4], p: f64| bits[..height(p)].iter().sum::<u32>();
+    let dots: String = points
+        .chunks(2)
+        .map(|pair| {
+            let mut cell = column(&LEFT, pair[0]);
+            if let Some(&right) = pair.get(1) {
+                cell += column(&RIGHT, right);
             }
+            char::from_u32(0x2800 + cell).unwrap_or(' ')
         })
         .collect();
     let value = match summary {
@@ -71,7 +82,7 @@ pub fn sparkline(points: &[f64], summary: Summary, unit: &str) -> String {
     } else {
         format!("{value:.1}")
     };
-    format!("{bars} {value}{unit}")
+    format!("{dots} {value}{unit}")
 }
 
 #[cfg(test)]
@@ -79,12 +90,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sparklines_scale_to_their_maximum() {
-        assert_eq!(
-            sparkline(&[0.0, 1.0, 2.0, 4.0], Summary::Total, ""),
-            "▁▃▅█ 7"
-        );
-        assert_eq!(sparkline(&[0.0, 0.0], Summary::Total, ""), "▁▁ 0");
-        assert_eq!(sparkline(&[10.0, 42.5], Summary::Peak, "%"), "▃█ 42.5%");
+    fn sparklines_are_dots_scaled_to_their_maximum() {
+        // Zero is one dot, the maximum four; two points per character.
+        assert_eq!(sparkline(&[0.0, 0.0], Summary::Total, ""), "⣀ 0");
+        assert_eq!(sparkline(&[0.0, 4.0], Summary::Total, ""), "⣸ 4");
+        assert_eq!(sparkline(&[4.0, 4.0, 0.0], Summary::Total, ""), "⣿⡀ 8");
+        assert_eq!(sparkline(&[10.0, 42.5], Summary::Peak, "%"), "⣼ 42.5%");
     }
 }
