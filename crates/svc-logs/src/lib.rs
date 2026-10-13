@@ -3,6 +3,8 @@
 //! This is a plain paged view. Live tail and Logs Insights are later phases
 //! (both are billed per use).
 
+mod insights;
+
 use async_trait::async_trait;
 use aws_sdk_cloudwatchlogs::Client;
 use aws_sdk_cloudwatchlogs::types::{LogGroup, LogStream, OrderBy, OutputLogEvent};
@@ -18,6 +20,7 @@ pub fn register(registry: &mut fast_aws_core::Registry) {
     registry.register(Groups);
     registry.register(Streams);
     registry.register(Events);
+    registry.register(insights::Insights);
 }
 
 /// Separates group and stream in an event list's parent ID. Neither name can
@@ -97,7 +100,10 @@ async fn list_groups(client: &Client, query: &ListQuery) -> Result<Page, AwsErro
         rows: out
             .log_groups()
             .iter()
-            .map(|g| source(group_row(g)))
+            .map(|g| {
+                let name = g.log_group_name().unwrap_or_default();
+                source(group_row(g)).query('I', insights::PROMPT, "logs:insights", name)
+            })
             .collect(),
         next: out.next_token,
     })
