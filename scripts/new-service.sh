@@ -15,6 +15,7 @@ name = "$pkg"
 description = "$name resource kinds for fast-aws"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

@@ -28,6 +28,20 @@ pub fn age_of(then_secs: Option<i64>) -> String {
         .unwrap_or_else(|| "-".into())
 }
 
+/// A Unix timestamp in milliseconds as UTC, `2026-10-13 09:00:00`.
+pub fn utc_millis(ms: i64) -> String {
+    use aws_smithy_types::date_time::{DateTime, Format};
+    DateTime::from_millis(ms)
+        .fmt(Format::DateTime)
+        .map(|s| s.replace('T', " ").trim_end_matches('Z').chars().take(19).collect())
+        .unwrap_or_else(|_| ms.to_string())
+}
+
+/// The date part (`2026-10-13`) of an ISO 8601 timestamp string.
+pub fn date_part(iso: Option<&str>) -> String {
+    or_dash(iso.map(|s| s.get(..10).unwrap_or(s)))
+}
+
 /// The text, or `-` when there is none.
 pub fn or_dash(text: Option<&str>) -> String {
     match text {
@@ -120,6 +134,14 @@ mod tests {
         assert_eq!(bytes(1536), "1.5 KiB");
         assert_eq!(bytes(3 * 1024 * 1024 * 1024), "3.0 GiB");
         assert_eq!(bytes(-1), "-1 B");
+    }
+
+    #[test]
+    fn utc_timestamps() {
+        assert_eq!(utc_millis(0), "1970-01-01 00:00:00");
+        assert_eq!(utc_millis(1_760_346_000_123), "2025-10-13 09:00:00");
+        assert_eq!(date_part(Some("2026-10-12T09:13:44.000+0000")), "2026-10-12");
+        assert_eq!(date_part(None), "-");
     }
 
     #[test]
