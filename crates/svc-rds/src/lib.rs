@@ -108,7 +108,11 @@ async fn list_databases(client: &Client, token: Option<&str>) -> Result<Page, Aw
             .send()
             .await
             .map_err(AwsError::from_sdk)?;
-        let rows = out.db_clusters().iter().map(cluster_row).collect();
+        let rows = out
+            .db_clusters()
+            .iter()
+            .map(|c| cluster_relations(cluster_row(c), c))
+            .collect();
         return Ok(Page {
             rows,
             next: after_first("cl", "in", out.marker()),
@@ -121,7 +125,11 @@ async fn list_databases(client: &Client, token: Option<&str>) -> Result<Page, Aw
         .send()
         .await
         .map_err(AwsError::from_sdk)?;
-    let rows = out.db_instances().iter().map(instance_row).collect();
+    let rows = out
+        .db_instances()
+        .iter()
+        .map(|i| instance_relations(instance_row(i), i))
+        .collect();
     Ok(Page {
         rows,
         next: out.marker().map(|m| format!("in:{m}")),
@@ -455,6 +463,36 @@ fn instance_snapshot_row(s: &DbSnapshot) -> Row {
     .row(format!("instance:{}", name.unwrap_or_default()))
 }
 
+/// What `g` offers from a cluster: its instances, master secret and groups.
+fn cluster_relations(mut row: Row, c: &DbCluster) -> Row {
+    let name = c.db_cluster_identifier().unwrap_or_default();
+    // Instance rows say "in <cluster>".
+    row = row.relate("its instances", "rds:db", &format!("in {name}"));
+    if let Some(secret) = c.master_user_secret().and_then(|s| s.secret_arn()) {
+        row = row.relate("master user secret", "secrets:secret", secret);
+    }
+    for g in c.vpc_security_groups() {
+        let id = g.vpc_security_group_id().unwrap_or_default();
+        row = row.relate(format!("security group {id}"), "ec2:sg", id);
+    }
+    row
+}
+
+/// What `g` offers from an instance: its cluster, master secret and groups.
+fn instance_relations(mut row: Row, i: &DbInstance) -> Row {
+    if let Some(cluster) = i.db_cluster_identifier() {
+        row = row.relate(format!("cluster {cluster}"), "rds:db", cluster);
+    }
+    if let Some(secret) = i.master_user_secret().and_then(|s| s.secret_arn()) {
+        row = row.relate("master user secret", "secrets:secret", secret);
+    }
+    for g in i.vpc_security_groups() {
+        let id = g.vpc_security_group_id().unwrap_or_default();
+        row = row.relate(format!("security group {id}"), "ec2:sg", id);
+    }
+    row
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,6 +515,42 @@ mod tests {
         );
         assert_eq!(after_first("cl", "in", Some("m")), Some("cl:m".into()));
         assert_eq!(after_first("cl", "in", None), Some("in:".into()));
+    }
+
+    #[test]
+    fn members_lead_to_their_cluster_and_secret() {
+        let i = DbInstance::builder()
+            .db_instance_identifier("orders-1")
+            .db_cluster_identifier("orders")
+            .master_user_secret(
+                aws_sdk_rds::types::MasterUserSecret::builder()
+                    .secret_arn("arn:aws:secretsmanager:x:1:secret:rds!db-1")
+                    .build(),
+            )
+            .build();
+        let row = instance_relations(instance_row(&i), &i);
+        let got: Vec<_> = row
+            .relations
+            .iter()
+            .map(|r| (r.kind, r.filter.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("rds:db", Some("orders")),
+                (
+                    "secrets:secret",
+                    Some("arn:aws:secretsmanager:x:1:secret:rds!db-1")
+                )
+            ]
+        );
+        let c = DbCluster::builder().db_cluster_identifier("orders").build();
+        assert_eq!(
+            cluster_relations(cluster_row(&c), &c).relations[0]
+                .filter
+                .as_deref(),
+            Some("in orders")
+        );
     }
 
     #[tokio::test]
