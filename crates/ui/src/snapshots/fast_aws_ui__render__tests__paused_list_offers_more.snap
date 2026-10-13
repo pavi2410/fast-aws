@@ -1,0 +1,16 @@
+---
+source: crates/ui/src/render.rs
+expression: render(&app)
+---
+" fast-aws  acme-dev (sso acme) │ 123456789012 │ eu-west  ? help "
+" Things (1)                       more available · n loads more "
+" NAME                                                     ID    "
+"▸web-1                                                    a     "
+"                                                                "
+"                                                                "
+"                                                                "
+"                                                                "
+"                                                                "
+"                                                                "
+"                                                                "
+" : jump  / filter  enter open  d describe  r refresh  P profile "

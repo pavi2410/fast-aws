@@ -129,6 +129,10 @@ fn draw_list_title(frame: &mut Frame, area: Rect, app: &App) {
         LoadStatus::Loading if list.total() == 0 => Span::styled("loading… ", DIM),
         LoadStatus::Loading => Span::styled(format!("loading… {} so far ", list.total()), DIM),
         LoadStatus::Done => Span::raw(""),
+        LoadStatus::More(_) => Span::styled(
+            "more available · n loads more ",
+            Style::new().fg(Color::Yellow),
+        ),
         LoadStatus::Failed(e) if list.total() > 0 => Span::styled(
             format!("⚠ refresh failed: {} ", short(e)),
             Style::new().fg(Color::Red),
@@ -451,6 +455,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         ("d", "describe the selected item"),
         ("tab", "fields / raw (in describe)"),
         ("r", "refresh"),
+        ("n", "load more (lists stop after 5 pages)"),
         ("P / R", "switch profile / region"),
         ("L", "SSO login for this profile"),
         ("esc / q", "back · q quits at the top level"),
@@ -597,6 +602,28 @@ mod tests {
                 )],
                 next: None,
             }),
+        });
+        insta::assert_snapshot!(render(&app));
+    }
+
+    #[test]
+    fn paused_list_offers_more() {
+        let mut app = app();
+        ready(&mut app);
+        press(&mut app, KeyCode::Char('r'));
+        app.handle_msg(Msg::Page {
+            generation: 2,
+            result: Ok(Page {
+                rows: vec![fast_aws_core::Row::new(
+                    "a",
+                    vec!["web-1".into(), "a".into()],
+                )],
+                next: Some("t2".into()),
+            }),
+        });
+        app.handle_msg(Msg::Paused {
+            generation: 2,
+            next: "t2".into(),
         });
         insta::assert_snapshot!(render(&app));
     }

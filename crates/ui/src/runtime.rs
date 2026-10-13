@@ -54,9 +54,9 @@ pub async fn run(
                         old.abort();
                     }
                 }
-                Effect::LoadList { generation } => {
+                Effect::LoadList { generation, from } => {
                     let target = Target::of(&app, &factory);
-                    loads.spawn(load_list(target, generation, tx.clone()));
+                    loads.spawn(load_list(target, generation, from, tx.clone()));
                 }
                 Effect::LoadDetail { generation, id } => {
                     let (target, tx) = (Target::of(&app, &factory), tx.clone());
@@ -136,14 +136,25 @@ impl Target {
     }
 }
 
-/// Streams every page of a list to the app, stopping at the first error.
-async fn load_list(target: Target, generation: u64, tx: UnboundedSender<Input>) {
+/// Pages per load before pausing. Some lists (S3 keys, Cognito users, log
+/// streams) can run to millions of items, and some of those APIs are heavily
+/// rate-limited; `n` continues.
+const MAX_PAGES: usize = 5;
+
+/// Streams pages of a list to the app, starting `from` a token if given. Stops at
+/// the end, at the first error, or after [`MAX_PAGES`].
+async fn load_list(
+    target: Target,
+    generation: u64,
+    from: Option<String>,
+    tx: UnboundedSender<Input>,
+) {
     let ctx = target.ctx().await;
     let mut query = ListQuery {
         parent: target.parent.clone(),
-        next: None,
+        next: from,
     };
-    loop {
+    for _ in 0..MAX_PAGES {
         let result = target.kind.list(&ctx, &query).await;
         let next = result.as_ref().ok().and_then(|p| p.next.clone());
         if tx
@@ -156,6 +167,9 @@ async fn load_list(target: Target, generation: u64, tx: UnboundedSender<Input>) 
             Some(token) => query.next = Some(token),
             None => return,
         }
+    }
+    if let Some(next) = query.next {
+        let _ = tx.send(Input::Msg(Msg::Paused { generation, next }));
     }
 }
 

@@ -47,8 +47,11 @@ pub enum Effect {
     LoadIdentity {
         generation: u64,
     },
+    /// Load a list from its start, or continue it `from` a page token. Loading
+    /// stops after a few pages and reports `Msg::Paused`.
     LoadList {
         generation: u64,
+        from: Option<String>,
     },
     LoadDetail {
         generation: u64,
@@ -71,6 +74,11 @@ pub enum Msg {
     Page {
         generation: u64,
         result: Result<Page, AwsError>,
+    },
+    /// The list hit the page limit; there's more from `next`.
+    Paused {
+        generation: u64,
+        next: String,
     },
     Detail {
         generation: u64,
@@ -162,7 +170,10 @@ impl App {
             app,
             vec![
                 Effect::LoadIdentity { generation: 1 },
-                Effect::LoadList { generation: 1 },
+                Effect::LoadList {
+                    generation: 1,
+                    from: None,
+                },
             ],
         )
     }
@@ -223,6 +234,9 @@ impl App {
                     Err(e) => self.list.fail(e),
                 }
             }
+            Msg::Paused { generation, next } if generation == self.list.generation => {
+                self.list.pause(next);
+            }
             Msg::Detail { generation, result } => {
                 if let Screen::Detail(d) = &mut self.screen
                     && d.generation == generation
@@ -240,7 +254,7 @@ impl App {
                 return self.reload_context(true);
             }
             // From a load that was replaced.
-            Msg::Identity { .. } | Msg::Page { .. } => {}
+            Msg::Identity { .. } | Msg::Page { .. } | Msg::Paused { .. } => {}
         }
         Vec::new()
     }
@@ -320,7 +334,22 @@ impl App {
             KeyCode::Char('r') => {
                 let generation = self.generation();
                 self.list.reload(generation);
-                return vec![Effect::CancelLoads, Effect::LoadList { generation }];
+                return vec![
+                    Effect::CancelLoads,
+                    Effect::LoadList {
+                        generation,
+                        from: None,
+                    },
+                ];
+            }
+            KeyCode::Char('n') => {
+                if let Some(from) = self.list.resume() {
+                    let generation = self.list.generation;
+                    return vec![Effect::LoadList {
+                        generation,
+                        from: Some(from),
+                    }];
+                }
             }
             KeyCode::Enter => return self.open_selected(),
             KeyCode::Char('d') => return self.open_detail(),
@@ -349,7 +378,13 @@ impl App {
         let generation = self.generation();
         let child = ListView::inside(kind, Some(drill.parent), generation);
         self.back.push(std::mem::replace(&mut self.list, child));
-        vec![Effect::CancelLoads, Effect::LoadList { generation }]
+        vec![
+            Effect::CancelLoads,
+            Effect::LoadList {
+                generation,
+                from: None,
+            },
+        ]
     }
 
     /// Returns to the list drilled out of. It's reloaded if its load was cut short.
@@ -362,7 +397,10 @@ impl App {
         if self.list.is_loading() {
             let generation = self.generation();
             self.list.reload(generation);
-            effects.push(Effect::LoadList { generation });
+            effects.push(Effect::LoadList {
+                generation,
+                from: None,
+            });
         }
         effects
     }
@@ -457,7 +495,13 @@ impl App {
         self.list = ListView::new(kind, generation);
         self.back.clear();
         self.screen = Screen::List;
-        vec![Effect::CancelLoads, Effect::LoadList { generation }]
+        vec![
+            Effect::CancelLoads,
+            Effect::LoadList {
+                generation,
+                from: None,
+            },
+        ]
     }
 
     fn filter_key(&mut self, key: KeyEvent) -> Vec<Effect> {
@@ -551,7 +595,10 @@ impl App {
                 generation: self.identity_generation,
             });
         }
-        effects.push(Effect::LoadList { generation });
+        effects.push(Effect::LoadList {
+            generation,
+            from: None,
+        });
         effects
     }
 
@@ -623,7 +670,10 @@ pub(crate) mod tests {
             effects,
             [
                 Effect::LoadIdentity { generation: 1 },
-                Effect::LoadList { generation: 1 }
+                Effect::LoadList {
+                    generation: 1,
+                    from: None
+                }
             ]
         );
         app.handle_msg(Msg::Page {
@@ -663,7 +713,13 @@ pub(crate) mod tests {
         let effects = press(&mut app, "r");
         assert_eq!(
             effects,
-            [Effect::CancelLoads, Effect::LoadList { generation: 2 }]
+            [
+                Effect::CancelLoads,
+                Effect::LoadList {
+                    generation: 2,
+                    from: None
+                }
+            ]
         );
         app.handle_msg(Msg::Page {
             generation: 1,
@@ -674,6 +730,31 @@ pub(crate) mod tests {
         });
         assert_eq!(app.list.total(), 2);
         assert!(app.list.is_loading());
+    }
+
+    #[test]
+    fn n_continues_a_paused_list_under_the_same_generation() {
+        let mut app = app();
+        press(&mut app, "r");
+        app.handle_msg(Msg::Page {
+            generation: 2,
+            result: Ok(Page {
+                rows: vec![row("a", "x")],
+                next: Some("t2".into()),
+            }),
+        });
+        app.handle_msg(Msg::Paused {
+            generation: 2,
+            next: "t2".into(),
+        });
+        assert_eq!(
+            press(&mut app, "n"),
+            [Effect::LoadList {
+                generation: 2,
+                from: Some("t2".into())
+            }]
+        );
+        assert!(press(&mut app, "n").is_empty()); // already loading
     }
 
     #[test]
@@ -700,7 +781,13 @@ pub(crate) mod tests {
         let effects = app.handle_key(key(KeyCode::Enter));
         assert_eq!(
             effects,
-            [Effect::CancelLoads, Effect::LoadList { generation: 2 }]
+            [
+                Effect::CancelLoads,
+                Effect::LoadList {
+                    generation: 2,
+                    from: None
+                }
+            ]
         );
         assert_eq!(app.list.kind.id(), "fake:part");
         assert_eq!(app.list.parent, Some(part_parent()));
@@ -721,7 +808,13 @@ pub(crate) mod tests {
         let effects = press(&mut app, "q");
         assert_eq!(
             effects,
-            [Effect::CancelLoads, Effect::LoadList { generation: 4 }]
+            [
+                Effect::CancelLoads,
+                Effect::LoadList {
+                    generation: 4,
+                    from: None
+                }
+            ]
         );
         assert_eq!(app.list.kind.id(), "fake:thing");
         assert!(!app.should_quit);
@@ -783,7 +876,13 @@ pub(crate) mod tests {
         let effects = app.handle_key(key(KeyCode::Enter));
         assert_eq!(
             effects,
-            [Effect::CancelLoads, Effect::LoadList { generation: 2 }]
+            [
+                Effect::CancelLoads,
+                Effect::LoadList {
+                    generation: 2,
+                    from: None
+                }
+            ]
         );
         assert_eq!(app.list.total(), 0);
 
@@ -816,7 +915,10 @@ pub(crate) mod tests {
             [
                 Effect::CancelLoads,
                 Effect::LoadIdentity { generation: 2 },
-                Effect::LoadList { generation: 2 }
+                Effect::LoadList {
+                    generation: 2,
+                    from: None
+                }
             ]
         );
         assert_eq!(app.identity, IdentityState::Loading);
@@ -832,7 +934,13 @@ pub(crate) mod tests {
         assert_eq!(app.region, "eu-west-2");
         assert_eq!(
             effects,
-            [Effect::CancelLoads, Effect::LoadList { generation: 2 }]
+            [
+                Effect::CancelLoads,
+                Effect::LoadList {
+                    generation: 2,
+                    from: None
+                }
+            ]
         );
     }
 
@@ -863,7 +971,10 @@ pub(crate) mod tests {
             [
                 Effect::CancelLoads,
                 Effect::LoadIdentity { generation: 2 },
-                Effect::LoadList { generation: 2 }
+                Effect::LoadList {
+                    generation: 2,
+                    from: None
+                }
             ]
         );
     }

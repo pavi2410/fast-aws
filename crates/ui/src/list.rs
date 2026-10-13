@@ -10,6 +10,8 @@ pub enum LoadStatus {
     /// Pages are still arriving.
     Loading,
     Done,
+    /// Loading stopped at the page limit; `n` continues from this token.
+    More(String),
     Failed(AwsError),
 }
 
@@ -67,6 +69,22 @@ impl ListView {
             self.status = LoadStatus::Done;
         }
         self.refilter(selected_id.as_deref());
+    }
+
+    /// Loading stopped at the page limit with more to fetch from `next`.
+    pub fn pause(&mut self, next: String) {
+        self.status = LoadStatus::More(next);
+    }
+
+    /// Continues a paused load, appending to the rows already shown. Returns the
+    /// token to continue from.
+    pub fn resume(&mut self) -> Option<String> {
+        let LoadStatus::More(next) = &self.status else {
+            return None;
+        };
+        let next = next.clone();
+        self.status = LoadStatus::Loading;
+        Some(next)
     }
 
     pub fn fail(&mut self, err: AwsError) {
@@ -256,6 +274,20 @@ pub(crate) mod tests {
         v.push_page(vec![row("c", "db"), row("d", "new")], true);
         assert_eq!(ids(&v), ["c", "d"]);
         assert_eq!(v.selected_row().unwrap().id, "c");
+    }
+
+    #[test]
+    fn a_paused_load_resumes_by_appending() {
+        let mut v = ListView::new(Arc::new(FakeKind), 1);
+        v.push_page(vec![row("a", "x")], false);
+        v.pause("t2".into());
+        assert_eq!(v.status, LoadStatus::More("t2".into()));
+        assert!(!v.is_loading());
+        assert_eq!(v.resume().as_deref(), Some("t2"));
+        assert!(v.is_loading());
+        v.push_page(vec![row("b", "y")], true);
+        assert_eq!(ids(&v), ["a", "b"]);
+        assert_eq!(v.resume(), None);
     }
 
     #[test]
