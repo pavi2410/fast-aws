@@ -59,7 +59,9 @@ pub async fn run(
                     loads.spawn(load_list(target, generation, from, tx.clone()));
                 }
                 Effect::LoadDetail { generation, id } => {
-                    let (target, tx) = (Target::of(&app, &factory), tx.clone());
+                    let mut target = Target::of(&app, &factory);
+                    target.row_region = app.list.row(&id).and_then(|r| r.region.clone());
+                    let tx = tx.clone();
                     loads.spawn(async move {
                         let ctx = target.ctx().await;
                         let parent = target.parent.as_ref();
@@ -109,6 +111,8 @@ struct Target {
     region: String,
     kind: Arc<dyn ResourceKind>,
     parent: Option<Parent>,
+    /// For describe: the region the row itself lives in, if it said.
+    row_region: Option<String>,
 }
 
 impl Target {
@@ -119,20 +123,34 @@ impl Target {
             region: app.region.clone(),
             kind: app.list.kind.clone(),
             parent: app.list.parent.clone(),
+            row_region: None,
         }
     }
 
     /// The context the kind's calls run in. Global and pinned services ignore the
-    /// current region, and a parent can name its own (an S3 bucket's region).
+    /// current region, and a row or parent can name its own (an S3 bucket's).
     async fn ctx(&self) -> Ctx {
         let ctx = self.factory.ctx(&self.profile, &self.region).await;
         let parent_region = self.parent.as_ref().and_then(|p| p.region.as_deref());
-        match (self.kind.scope(), parent_region) {
-            (Scope::Global, _) => ctx.in_region("us-east-1"),
-            (Scope::Pinned(region), _) => ctx.in_region(region),
-            (Scope::Regional, Some(region)) => ctx.in_region(region),
-            (Scope::Regional, None) => ctx,
+        match call_region(self.kind.scope(), self.row_region.as_deref(), parent_region) {
+            Some(region) => ctx.in_region(region),
+            None => ctx,
         }
+    }
+}
+
+/// The region a call must go to instead of the current one, if any: global
+/// services use `us-east-1`, pinned ones their region, and otherwise the row's or
+/// parent's own region wins.
+fn call_region<'a>(
+    scope: Scope,
+    row_region: Option<&'a str>,
+    parent_region: Option<&'a str>,
+) -> Option<&'a str> {
+    match scope {
+        Scope::Global => Some("us-east-1"),
+        Scope::Pinned(region) => Some(region),
+        Scope::Regional => row_region.or(parent_region),
     }
 }
 
@@ -260,5 +278,31 @@ impl InputThread {
 
     fn stop(&self) {
         self.stop.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn calls_go_to_the_resource_region_when_it_has_one() {
+        assert_eq!(call_region(Scope::Regional, None, None), None);
+        assert_eq!(
+            call_region(Scope::Regional, None, Some("eu-west-1")),
+            Some("eu-west-1")
+        );
+        assert_eq!(
+            call_region(Scope::Regional, Some("ap-south-1"), Some("eu-west-1")),
+            Some("ap-south-1")
+        );
+        assert_eq!(
+            call_region(Scope::Global, Some("ap-south-1"), None),
+            Some("us-east-1")
+        );
+        assert_eq!(
+            call_region(Scope::Pinned("us-east-1"), None, None),
+            Some("us-east-1")
+        );
     }
 }

@@ -125,6 +125,11 @@ impl ListView {
         (!self.visible.is_empty()).then_some(self.selected)
     }
 
+    /// A loaded row by ID, whether or not it passes the filter.
+    pub fn row(&self, id: &str) -> Option<&Row> {
+        self.rows.iter().find(|r| r.id == id)
+    }
+
     pub fn selected_row(&self) -> Option<&Row> {
         self.visible.get(self.selected).map(|&i| &self.rows[i])
     }

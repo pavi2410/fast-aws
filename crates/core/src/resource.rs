@@ -140,6 +140,9 @@ pub struct Row {
     pub cells: Vec<Cell>,
     /// Set when the row contains other resources; `Enter` opens them.
     pub drill: Option<Drill>,
+    /// The region the resource lives in, when its calls can't use the current one
+    /// (S3 buckets). Describe goes there.
+    pub region: Option<String>,
 }
 
 impl Row {
@@ -148,7 +151,14 @@ impl Row {
             id: id.into(),
             cells,
             drill: None,
+            region: None,
         }
+    }
+
+    /// Sends describe calls for this row to `region`.
+    pub fn in_region(mut self, region: Option<String>) -> Self {
+        self.region = region;
+        self
     }
 
     /// Makes `Enter` on this row open a list of `kind` inside `parent`.
