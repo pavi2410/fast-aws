@@ -23,8 +23,13 @@ can be done just before the phase that needs them.
 - Command palette (`:`)
 - **EC2 instances**, read-only: list + describe
 
-**Exit:** `fast-aws` opens to EC2 instances for the default profile in under 1 s when
-cached. Switching profile/region works. AccessDenied shows inside the pane.
+**Exit:**
+- `fast-aws` draws its first frame immediately, before any AWS call returns, then fills
+  in EC2 instances as pages arrive.
+- Switching profile and region works.
+- AccessDenied and expired SSO show inside the pane.
+
+The "under 1 s from cache" target moves to Phase 2, where the cache lands.
 
 ## Phase 2: Read-only core (the daily drivers)
 
@@ -35,7 +40,8 @@ These four account for most console visits, and Lambda depends on Logs.
 - CloudWatch metrics: sparkline/chart widget, alarms list
 - Lambda: list with error sparklines, config panel, `l` logs
 - S3: **Miller-column browser**, preview, download, presigned URL (all safe)
-- Cache (stale-while-revalidate), with disk cache for the region list
+- Cache (stale-while-revalidate), with disk cache for the region list. Exit adds:
+  reopening a cached view renders in under 1 s
 - `g` relations for kinds F and N among these services
 - `c` copies the CLI command
 
