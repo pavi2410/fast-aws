@@ -475,11 +475,18 @@ impl App {
     }
 
     /// Where the current list sits: the root kind's title, then each parent.
+    ///
+    /// A list inside a parent shows the parent (`S3 Buckets › logs › 2026/`); a
+    /// list reached with `g` shows its own title (`Lambda Functions › IAM Roles`).
     pub fn breadcrumb(&self) -> Vec<&str> {
-        let lists = self.back.iter().chain(std::iter::once(&self.list));
-        let mut crumbs = vec![self.back.first().unwrap_or(&self.list).kind.title()];
-        crumbs.extend(lists.filter_map(|l| l.parent.as_ref().map(|p| p.label.as_str())));
-        crumbs
+        self.back
+            .iter()
+            .chain(std::iter::once(&self.list))
+            .map(|l| match &l.parent {
+                Some(parent) => parent.label.as_str(),
+                None => l.kind.title(),
+            })
+            .collect()
     }
 
     fn open_detail(&mut self) -> Vec<Effect> {
@@ -1106,6 +1113,7 @@ pub(crate) mod tests {
         assert_eq!(app.list.kind.id(), "fake:part");
         assert_eq!(app.list.filter, "bolt");
         assert_eq!(app.list.parent, None);
+        assert_eq!(app.breadcrumb(), ["Things", "Parts"]);
 
         app.handle_key(key(KeyCode::Esc)); // clears the filter first
         app.handle_key(key(KeyCode::Esc));
