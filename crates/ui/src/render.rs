@@ -1,7 +1,7 @@
 //! Drawing. Everything here reads [`App`] and draws; no state changes.
 
 use fast_aws_core::profiles::Auth;
-use fast_aws_core::{AwsError, ColumnWidth, ErrorKind, Tone};
+use fast_aws_core::{AwsError, ColumnWidth, ErrorKind, Scope, Tone};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -173,7 +173,12 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
         let msg = Paragraph::new(format!("nothing matches /{}", list.filter)).style(DIM);
         frame.render_widget(msg, area.inner(ratatui::layout::Margin::new(2, 2)));
     } else if list.status == LoadStatus::Done && list.total() == 0 {
-        let msg = Paragraph::new(format!("no {} in {}", list.kind.title(), app.region)).style(DIM);
+        let place = match list.kind.scope() {
+            Scope::Regional => app.region.clone(),
+            Scope::Global => "this account".to_owned(),
+            Scope::Pinned(region) => region.to_owned(),
+        };
+        let msg = Paragraph::new(format!("no {} in {place}", list.kind.title())).style(DIM);
         frame.render_widget(msg, area.inner(ratatui::layout::Margin::new(2, 2)));
     }
 }
