@@ -3,6 +3,7 @@ name = "fast-aws-core"
 description = "Resource model, AWS clients, tasks and errors shared by every fast-aws service"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

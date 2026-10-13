@@ -3,6 +3,7 @@ name = "fast-aws-ui"
 description = "Terminal UI: app loop and shared widgets for fast-aws"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

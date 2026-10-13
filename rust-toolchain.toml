@@ -1,0 +1,5 @@
+# Pins the toolchain for everything that builds or analyses this repo (cargo,
+# editors running rust-analyzer), regardless of rustup's default.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy", "rust-src"]
