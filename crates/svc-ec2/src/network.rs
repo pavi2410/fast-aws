@@ -63,7 +63,11 @@ async fn list_sgs(client: &Client, query: &ListQuery) -> Result<Page, AwsError> 
         .send()
         .await
         .map_err(AwsError::from_sdk)?;
-    let rows = out.security_groups().iter().map(sg_row).collect();
+    let rows = out
+        .security_groups()
+        .iter()
+        .map(|sg| sg_row(sg).relate("its VPC", "ec2:vpc", sg.vpc_id().unwrap_or_default()))
+        .collect();
     Ok(Page {
         rows,
         next: out.next_token,
@@ -161,7 +165,14 @@ impl ResourceKind for Vpcs {
             .send()
             .await
             .map_err(AwsError::from_sdk)?;
-        let rows = out.vpcs().iter().map(vpc_row).collect();
+        let rows = out
+            .vpcs()
+            .iter()
+            .map(|vpc| {
+                let id = vpc.vpc_id().unwrap_or_default();
+                vpc_row(vpc).relate("its security groups", "ec2:sg", id)
+            })
+            .collect();
         Ok(Page {
             rows,
             next: out.next_token,
@@ -267,7 +278,11 @@ async fn list_subnets(client: &Client, query: &ListQuery) -> Result<Page, AwsErr
         .send()
         .await
         .map_err(AwsError::from_sdk)?;
-    let rows = out.subnets().iter().map(subnet_row).collect();
+    let rows = out
+        .subnets()
+        .iter()
+        .map(|s| subnet_row(s).relate("its VPC", "ec2:vpc", s.vpc_id().unwrap_or_default()))
+        .collect();
     Ok(Page {
         rows,
         next: out.next_token,

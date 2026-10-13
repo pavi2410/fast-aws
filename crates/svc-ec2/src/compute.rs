@@ -86,7 +86,18 @@ async fn list_volumes(client: &Client, query: &ListQuery) -> Result<Page, AwsErr
         .send()
         .await
         .map_err(AwsError::from_sdk)?;
-    let rows = out.volumes().iter().map(volume_row).collect();
+    let rows = out
+        .volumes()
+        .iter()
+        .map(|v| {
+            let instance = v
+                .attachments()
+                .first()
+                .and_then(|a| a.instance_id())
+                .unwrap_or_default();
+            volume_row(v).relate(format!("instance {instance}"), "ec2:instance", instance)
+        })
+        .collect();
     Ok(Page {
         rows,
         next: out.next_token,
@@ -312,7 +323,14 @@ impl ResourceKind for Addresses {
             .await
             .map_err(AwsError::from_sdk)?;
         Ok(Page {
-            rows: out.addresses().iter().map(eip_row).collect(),
+            rows: out
+                .addresses()
+                .iter()
+                .map(|a| {
+                    let instance = a.instance_id().unwrap_or_default();
+                    eip_row(a).relate(format!("instance {instance}"), "ec2:instance", instance)
+                })
+                .collect(),
             next: None,
         })
     }

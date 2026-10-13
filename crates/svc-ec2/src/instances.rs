@@ -63,7 +63,7 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
         .reservations()
         .iter()
         .flat_map(|r| r.instances())
-        .map(|i| row(i, now))
+        .map(|i| relations(row(i, now), i))
         .collect();
     Ok(Page {
         rows,
@@ -155,6 +155,35 @@ fn fields(i: &Instance) -> Value {
     })
 }
 
+/// What `g` offers from an instance.
+fn relations(mut row: Row, i: &Instance) -> Row {
+    for g in i.security_groups() {
+        let id = g.group_id().unwrap_or_default();
+        row = row.relate(
+            format!("security group {}", g.group_name().unwrap_or(id)),
+            "ec2:sg",
+            id,
+        );
+    }
+    let id = i.instance_id().unwrap_or_default();
+    row.relate(
+        format!("subnet {}", i.subnet_id().unwrap_or_default()),
+        "ec2:subnet",
+        i.subnet_id().unwrap_or_default(),
+    )
+    .relate(
+        format!("VPC {}", i.vpc_id().unwrap_or_default()),
+        "ec2:vpc",
+        i.vpc_id().unwrap_or_default(),
+    )
+    .relate("its volumes", "ec2:volume", id)
+    .relate(
+        format!("key pair {}", i.key_name().unwrap_or_default()),
+        "ec2:keypair",
+        i.key_name().unwrap_or_default(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +262,38 @@ mod tests {
         assert_eq!(page.rows[1].cells[0].text, "-");
         assert_eq!(page.rows[1].cells[2].tone, Tone::Dim);
         assert_eq!(rule.num_calls(), 1);
+    }
+
+    #[test]
+    fn g_offers_groups_network_volumes_and_key() {
+        let i = Instance::builder()
+            .instance_id("i-1")
+            .subnet_id("subnet-1")
+            .vpc_id("vpc-1")
+            .key_name("ops")
+            .security_groups(
+                aws_sdk_ec2::types::GroupIdentifier::builder()
+                    .group_id("sg-1")
+                    .group_name("web")
+                    .build(),
+            )
+            .build();
+        let row = relations(row(&i, 0), &i);
+        let got: Vec<_> = row
+            .relations
+            .iter()
+            .map(|r| (r.label.as_str(), r.kind, r.filter.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("security group web", "ec2:sg", Some("sg-1")),
+                ("subnet subnet-1", "ec2:subnet", Some("subnet-1")),
+                ("VPC vpc-1", "ec2:vpc", Some("vpc-1")),
+                ("its volumes", "ec2:volume", Some("i-1")),
+                ("key pair ops", "ec2:keypair", Some("ops")),
+            ]
+        );
     }
 
     #[tokio::test]
