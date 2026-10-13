@@ -219,24 +219,25 @@ Build each of these once and reuse it across services:
 | **Secret field** (masked, reveal on key, clipboard auto-clear) | Secrets Manager, SSM SecureString, Cognito client secret, RDS master secret |
 | **Confirm dialog** (y/n or type-to-confirm, shows the CLI command) | all actions |
 
-## Config file sketch
+## Config file
+
+`~/.config/fast-aws/config.toml` (or under `$XDG_CONFIG_HOME`). Unknown keys are
+rejected, so the app won't start with a typo in this file. Supported today:
 
 ```toml
-[ui]
-refresh_secs = 10
-clipboard_clear_secs = 30
+read_only = true          # every profile (or pass --read-only)
+metrics = false           # no sparklines; GetMetricData is billed (or --no-metrics)
 
-[profiles.prod-admin]
-prod = true
-color = "red"
+[profiles.generex-qa-ro]
 read_only = true
 
-[[bookmarks]]
-name = "staging web"
-target = ":ec2 /env=staging role=web"
-profile = "staging"
-region = "eu-west-1"
+[profiles.prod-admin]
+prod = true               # red PROD badge; actions need :unlock
 ```
+
+Planned, **not supported yet** (adding them now stops startup): a `[ui]` table
+(refresh interval, clipboard clear time), a per-profile `color`, and
+`[[bookmarks]]`.
 
 ## Spikes to run before building on assumptions
 
