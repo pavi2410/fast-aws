@@ -68,7 +68,7 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
     let mut rows: Vec<(u8, Row)> = out
         .metric_alarms()
         .iter()
-        .map(|a| (rank(a.state_value()), metric_row(a)))
+        .map(|a| (rank(a.state_value()), watched(metric_row(a), a)))
         .chain(
             out.composite_alarms()
                 .iter()
@@ -237,6 +237,27 @@ async fn describe(client: &Client, name: &str) -> Result<Detail, AwsError> {
     })
 }
 
+/// What `g` offers from an alarm: the resource its dimensions name.
+fn watched(mut row: Row, a: &MetricAlarm) -> Row {
+    for d in a.dimensions() {
+        let value = d.value().unwrap_or_default();
+        let target = match d.name().unwrap_or_default() {
+            "FunctionName" => Some(("function", "lambda:function")),
+            "InstanceId" => Some(("instance", "ec2:instance")),
+            "DBInstanceIdentifier" | "DBClusterIdentifier" => Some(("database", "rds:db")),
+            "TableName" => Some(("table", "dynamodb:table")),
+            "ApiName" => Some(("API", "apigw:api")),
+            "LogGroupName" => Some(("log group", "logs:group")),
+            "DistributionId" => Some(("distribution", "cloudfront:distribution")),
+            _ => None,
+        };
+        if let Some((what, kind)) = target {
+            row = row.relate(format!("{what} {value}"), kind, value);
+        }
+    }
+    row
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +327,11 @@ mod tests {
             ]
         );
         assert_eq!(page.rows[1].cells[5].text, "muted");
+        let target = &page.rows[0].relations[0];
+        assert_eq!(
+            (target.kind, target.filter.as_deref()),
+            ("lambda:function", Some("thumbs"))
+        );
         assert_eq!(page.next.as_deref(), Some("t2"));
     }
 }
