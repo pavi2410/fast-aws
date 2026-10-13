@@ -1171,7 +1171,9 @@ name = "fast-aws"
 version = "0.1.0"
 dependencies = [
  "fast-aws-core",
+ "fast-aws-svc-ec2",
  "fast-aws-ui",
+ "tokio",
 ]
 
 [[package]]
