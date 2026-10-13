@@ -5,7 +5,9 @@
 use std::sync::Arc;
 
 use fast_aws_core::profiles::{ProfileCatalog, ProfileInfo};
-use fast_aws_core::{AwsError, CallerIdentity, Detail, ErrorKind, Page, Registry, ResourceKind};
+use fast_aws_core::{
+    AwsError, CallerIdentity, Detail, ErrorKind, Page, Registry, ResourceKind, Scope,
+};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::detail::{DetailState, DetailView};
@@ -579,6 +581,13 @@ impl App {
                 self.overlay = Overlay::None;
                 if REGIONS[at] != self.region {
                     self.region = REGIONS[at].to_owned();
+                    // Global and pinned services (IAM, CloudFront, Cost Explorer)
+                    // look the same from every region; reloading them would only
+                    // repeat the calls (billed ones, for Cost Explorer).
+                    let mut lists = self.back.iter().chain(std::iter::once(&self.list));
+                    if lists.all(|l| l.kind.scope() != Scope::Regional) {
+                        return Vec::new();
+                    }
                     return self.reload_context(false);
                 }
             }
@@ -966,6 +975,55 @@ pub(crate) mod tests {
                 }
             ]
         );
+    }
+
+    /// A global kind, like IAM.
+    struct FakeGlobal;
+
+    #[async_trait::async_trait]
+    impl ResourceKind for FakeGlobal {
+        fn id(&self) -> &'static str {
+            "fake:global"
+        }
+        fn title(&self) -> &'static str {
+            "Globals"
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            &[]
+        }
+        fn scope(&self) -> Scope {
+            Scope::Global
+        }
+        fn columns(&self) -> &'static [fast_aws_core::Column] {
+            &[]
+        }
+        async fn list(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: &fast_aws_core::ListQuery,
+        ) -> Result<Page, AwsError> {
+            Ok(Page::default())
+        }
+        async fn describe(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: Option<&Parent>,
+            _: &str,
+        ) -> Result<Detail, AwsError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn region_switch_on_a_global_service_does_not_reload() {
+        let mut app = app();
+        app.list = ListView::new(std::sync::Arc::new(FakeGlobal), 7);
+        app.list.push_page(vec![row("r1", "admin")], true);
+        press(&mut app, "Rj");
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert!(effects.is_empty());
+        assert_eq!(app.region, "eu-west-2");
+        assert_eq!(app.list.total(), 1);
     }
 
     #[test]
