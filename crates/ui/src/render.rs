@@ -384,6 +384,12 @@ fn scroll_to(at: usize, height: u16) -> u16 {
 }
 
 fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str, at: usize) {
+    let title_width = app
+        .registry
+        .palette()
+        .map(|k| k.title().chars().count())
+        .max()
+        .unwrap_or(0);
     let lines: Vec<Line> = app
         .registry
         .search(input)
@@ -393,7 +399,11 @@ fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str, at: usize
             let aliases = format!(":{}", k.aliases().join("  :"));
             let line = Line::from(vec![
                 Span::raw(if i == at { "▸ " } else { "  " }),
-                Span::styled(format!("{:<24}", k.title()), Style::new().bold()),
+                // Titles are padded to the longest one so the aliases line up.
+                Span::styled(
+                    format!("{:<width$}  ", k.title(), width = title_width),
+                    Style::new().bold(),
+                ),
                 Span::styled(aliases, DIM),
             ]);
             if i == at {
@@ -404,7 +414,7 @@ fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str, at: usize
         })
         .collect();
     let height = lines.len().clamp(1, 14) as u16 + 2;
-    let inner = popup(frame, area, 60, height, "jump to");
+    let inner = popup(frame, area, 80, height, "jump to");
     if lines.is_empty() {
         frame.render_widget(Paragraph::new(Text::styled("no match", DIM)), inner);
     } else {
