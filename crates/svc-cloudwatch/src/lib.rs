@@ -1,7 +1,11 @@
 //! CloudWatch: alarms (metric and composite).
 //!
-//! Metric charts and sparklines come later: `GetMetricData` is billed per metric
-//! requested, so it needs the visible-rows batching from the plan first.
+//! Also the source of sparkline points for other services' lists
+//! ([`CloudWatchMetrics`]); `GetMetricData` is billed per metric requested.
+
+mod sparklines;
+
+pub use sparklines::CloudWatchMetrics;
 
 use async_trait::async_trait;
 use aws_sdk_cloudwatch::Client;
