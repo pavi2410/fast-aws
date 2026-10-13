@@ -94,7 +94,11 @@ async fn list_groups(client: &Client, query: &ListQuery) -> Result<Page, AwsErro
         .await
         .map_err(AwsError::from_sdk)?;
     Ok(Page {
-        rows: out.log_groups().iter().map(group_row).collect(),
+        rows: out
+            .log_groups()
+            .iter()
+            .map(|g| source(group_row(g)))
+            .collect(),
         next: out.next_token,
     })
 }
@@ -318,6 +322,15 @@ fn event_row(e: &OutputLogEvent) -> Row {
     )
 }
 
+/// What `g` offers from a log group: the Lambda function that writes to it,
+/// when the name follows Lambda's convention.
+fn source(row: Row) -> Row {
+    match row.id.strip_prefix("/aws/lambda/").map(str::to_owned) {
+        Some(function) => row.relate(format!("function {function}"), "lambda:function", &function),
+        None => row,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +368,13 @@ mod tests {
         assert_eq!(row.cells[1].text, "never");
         assert_eq!(row.cells[1].tone, Tone::Warn);
         assert_eq!(row.drill.as_ref().unwrap().parent.id, "/aws/lambda/thumbs");
+    }
+
+    #[test]
+    fn lambda_log_groups_lead_to_their_function() {
+        let lambda = source(Row::new("/aws/lambda/thumbs", vec![]));
+        assert_eq!(lambda.relations[0].filter.as_deref(), Some("thumbs"));
+        assert!(source(Row::new("/ecs/web", vec![])).relations.is_empty());
     }
 
     #[test]
