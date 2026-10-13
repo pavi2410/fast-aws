@@ -55,7 +55,11 @@ Phases 2 and 3, done since (same day):
 - relations (`g`), including reverse ones found in loaded lists
 - the IAM effective-permissions view (Enter on a role or user) and simulator (`S`)
 - Logs Insights (`I` on a log group) and following a log group live (`g` →
-  follow live; it polls `FilterLogEvents` instead of the billed Live Tail)
+  follow live). It polls `FilterLogEvents` every 2 s (at most 2 calls a poll)
+  instead of Live Tail, which is billed per session minute. The AWS pricing page
+  doesn't list a per-request price for `FilterLogEvents`; confirm before relying
+  on it being free. Its rate limit is per account and region and can't be raised
+  (5/s in eu-central-1), hence the small poll.
 - the DynamoDB item explorer (`Q`, Query only)
 - revealing a secret (`v`, then type `reveal`)
 - sparklines (Lambda errors, EC2 and RDS CPU; `--no-metrics` turns them off)

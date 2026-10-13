@@ -4,6 +4,11 @@
 //! Polls `FilterLogEvents` every [`EVERY`], from five minutes back, then from
 //! just after the newest event seen. (`StartLiveTail` is billed per session
 //! minute, so it isn't used.)
+//!
+//! `FilterLogEvents` is rate-limited per account and region, and the limit
+//! can't be raised: 25/s in us-east-1, 10/s in most regions, 5/s in a few
+//! (eu-central-1 among them). One poll every two seconds, of at most
+//! [`PAGES_PER_POLL`] calls, leaves most of that to everything else.
 
 use std::time::Duration;
 
@@ -19,8 +24,9 @@ use crate::EVENT_SEP;
 
 const EVERY: Duration = Duration::from_secs(2);
 const LOOKBACK_MS: i64 = 5 * 60 * 1000;
-/// Result pages read per poll, at most.
-const PAGES_PER_POLL: usize = 5;
+/// Result pages read per poll, at most; a busy group catches up over the
+/// next polls instead of in one burst.
+const PAGES_PER_POLL: usize = 2;
 
 pub struct Tail;
 
