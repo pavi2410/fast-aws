@@ -126,15 +126,24 @@ pub fn classify(code: Option<&str>, message: &str) -> ErrorKind {
     }
 
     let text = message.to_ascii_lowercase();
-    if text.contains("sso") && (text.contains("token") || text.contains("session")) {
+    // Specific network failures first: an SSO profile that is merely offline fails
+    // with a chain that mentions both the SSO token and the network error, and
+    // "log in again" would be the wrong advice.
+    let network = [
+        "dns error",
+        "connection refused",
+        "tcp connect",
+        "timed out",
+        "timeout",
+    ];
+    if network.iter().any(|m| text.contains(m)) {
+        ErrorKind::Network
+    } else if text.contains("sso") && (text.contains("token") || text.contains("session")) {
         ErrorKind::SsoExpired
     } else if text.contains("credentials") {
         ErrorKind::Credentials
-    } else if text.contains("dns error")
-        || text.contains("connection refused")
-        || text.contains("timed out")
-        || text.contains("dispatch failure")
-    {
+    } else if text.contains("dispatch failure") {
+        // Generic, so last: the missing-SSO-token chain contains it too.
         ErrorKind::Network
     } else {
         ErrorKind::Other
@@ -185,6 +194,23 @@ mod tests {
         ] {
             assert_eq!(classify(None, msg), ErrorKind::SsoExpired, "{msg}");
         }
+    }
+
+    #[test]
+    fn an_offline_sso_profile_is_a_network_problem_not_an_expired_session() {
+        let msg = "dispatch failure: other: an error occurred while loading credentials: \
+                   call to SSO OIDC CreateToken for SSO token refresh failed: \
+                   dispatch failure: io error: dns error: failed to lookup address";
+        assert_eq!(classify(None, msg), ErrorKind::Network);
+    }
+
+    #[test]
+    fn a_missing_sso_token_is_expired_despite_the_dispatch_failure_wrapper() {
+        // Captured from aws-config 1.12 with no token in ~/.aws/sso/cache.
+        let msg = "dispatch failure: other: an error occurred while loading credentials: \
+                   an error occurred while loading an access token: \
+                   failed to load the cached SSO token";
+        assert_eq!(classify(None, msg), ErrorKind::SsoExpired);
     }
 
     #[test]
