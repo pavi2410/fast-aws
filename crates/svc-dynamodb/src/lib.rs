@@ -1,7 +1,9 @@
 //! DynamoDB resource kinds: tables.
 //!
-//! Only table metadata for now. Reading items (Query first, Scan only on
-//! request) waits for the item explorer, because a Scan consumes read capacity.
+//! Tables, and their items by partition key (`Q`, see [`items`]). There is no
+//! Scan: it reads the whole table and consumes its read capacity.
+
+mod items;
 
 use async_trait::async_trait;
 use aws_sdk_dynamodb::Client;
@@ -15,6 +17,7 @@ use serde_json::{Value, json};
 /// Registers every DynamoDB resource kind.
 pub fn register(registry: &mut fast_aws_core::Registry) {
     registry.register(Tables);
+    registry.register(items::Items);
 }
 
 pub struct Tables;
@@ -58,7 +61,7 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
     let rows = out
         .table_names()
         .iter()
-        .map(|n| Row::new(n, vec![n.as_str().into()]))
+        .map(|n| Row::new(n, vec![n.as_str().into()]).query('Q', items::PROMPT, "dynamodb:item", n))
         .collect();
     Ok(Page {
         rows,
