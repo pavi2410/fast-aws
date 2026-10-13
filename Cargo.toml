@@ -12,6 +12,7 @@ license = "MIT OR Apache-2.0"
 fast-aws-core = { path = "crates/core" }
 fast-aws-ui = { path = "crates/ui" }
 fast-aws-svc-ec2 = { path = "crates/svc-ec2" }
+fast-aws-svc-iam = { path = "crates/svc-iam" }
 fast-aws-svc-logs = { path = "crates/svc-logs" }
 fast-aws-svc-lambda = { path = "crates/svc-lambda" }
 fast-aws-svc-s3 = { path = "crates/svc-s3" }
@@ -19,6 +20,7 @@ fast-aws-svc-s3 = { path = "crates/svc-s3" }
 async-trait = "0.1"
 aws-config = { version = "1.12", features = ["behavior-version-latest", "credentials-login"] }
 aws-runtime = "1.9"
+aws-sdk-iam = "1.128"
 aws-sdk-cloudwatchlogs = "1.156"
 aws-sdk-lambda = "1.150"
 aws-sdk-s3 = "1.152"

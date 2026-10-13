@@ -234,6 +234,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-iam"
+version = "1.128.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1409c52a89810f961a7384256586b043d44e7490675d8e05f1a35d77c47a43f6"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-query",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-smithy-xml",
+ "aws-types",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-lambda"
 version = "1.150.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1345,6 +1371,7 @@ version = "0.1.0"
 dependencies = [
  "fast-aws-core",
  "fast-aws-svc-ec2",
+ "fast-aws-svc-iam",
  "fast-aws-svc-lambda",
  "fast-aws-svc-logs",
  "fast-aws-svc-s3",
@@ -1374,6 +1401,18 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "aws-sdk-ec2",
+ "aws-smithy-mocks",
+ "fast-aws-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fast-aws-svc-iam"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-sdk-iam",
  "aws-smithy-mocks",
  "fast-aws-core",
  "serde_json",
