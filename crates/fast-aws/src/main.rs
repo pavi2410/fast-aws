@@ -69,6 +69,7 @@ fn registry() -> Registry {
     fast_aws_svc_cognito::register(&mut registry);
     fast_aws_svc_ses::register(&mut registry);
     fast_aws_svc_cloudwatch::register(&mut registry);
+    fast_aws_svc_cost::register(&mut registry);
     registry
 }
 

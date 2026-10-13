@@ -368,6 +368,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-costexplorer"
+version = "1.133.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cf5d5a1c5f1881674f0fed5eba38f2a9d75e4fd764fb6aa2a1ecf3f8350caf3"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-dynamodb"
 version = "1.130.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1758,6 +1783,7 @@ dependencies = [
  "fast-aws-svc-cloudfront",
  "fast-aws-svc-cloudwatch",
  "fast-aws-svc-cognito",
+ "fast-aws-svc-cost",
  "fast-aws-svc-dynamodb",
  "fast-aws-svc-ec2",
  "fast-aws-svc-events",
@@ -1833,6 +1859,18 @@ dependencies = [
  "async-trait",
  "aws-sdk-cognitoidentity",
  "aws-sdk-cognitoidentityprovider",
+ "aws-smithy-mocks",
+ "fast-aws-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fast-aws-svc-cost"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-sdk-costexplorer",
  "aws-smithy-mocks",
  "fast-aws-core",
  "serde_json",
