@@ -30,7 +30,7 @@
   - This answers "what can this role actually do?" without opening each policy.
 - **Trust policy** shown separately from permission policies, since it's usually the
   first thing to check.
-- **"Can it?" simulator** (`?` key inside a role or user): enter an action, and
+- **"Can it?" simulator** (`S` key inside a role or user): enter an action, and
   optionally a resource ARN →
   `SimulatePrincipalPolicy` → allowed / denied, plus the statement that decided it.
 - **Access-key hygiene:** a users view sorted by key age, with keys unused for 90 days
@@ -40,7 +40,7 @@
 
 | Key | Action | API | Safety | CLI |
 |---|---|---|---|---|
-| `?` | Simulate action | `SimulatePrincipalPolicy` | safe | `aws iam simulate-principal-policy …` |
+| `S` | Simulate action | `SimulatePrincipalPolicy` | safe | `aws iam simulate-principal-policy …` |
 | `e` | Edit inline policy (JSON in `$EDITOR`, validated, diff) | `PutRolePolicy` / `PutUserPolicy` | mutating | |
 | `x→attach` | Attach a managed policy (fuzzy-pick) | `AttachRolePolicy` / `AttachUserPolicy` | mutating | |
 | `x→detach` | Detach a managed policy | `DetachRolePolicy` / `DetachUserPolicy` | mutating | |
