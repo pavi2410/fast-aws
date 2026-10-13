@@ -46,6 +46,11 @@ impl ResourceKind for CostByService {
         columns: COLUMNS,
     }
 
+    /// Each request is billed, so a cached result is shown as it is.
+    fn refresh_on_open(&self) -> bool {
+        false
+    }
+
     async fn list(&self, ctx: &Ctx, _: &ListQuery) -> Result<Page, AwsError> {
         let (start, end) = month_to_date(fast_aws_core::fmt::now_secs());
         list(&Client::new(ctx.config()), &start, &end).await

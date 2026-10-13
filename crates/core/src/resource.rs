@@ -220,6 +220,13 @@ pub trait ResourceKind: Send + Sync {
         true
     }
 
+    /// Whether reopening a cached list refreshes it in the background. Kinds
+    /// whose calls are billed per request (Cost Explorer) return `false` and
+    /// refresh only when asked (`r`).
+    fn refresh_on_open(&self) -> bool {
+        true
+    }
+
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> Result<Page, AwsError>;
     async fn describe(
         &self,
