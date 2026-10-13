@@ -68,7 +68,8 @@ pub trait ResourceKind: Send + Sync {
 }
 
 pub struct ActionSpec {
-    pub key: char,
+    pub key: Option<KeyBinding>,      // None = only in the `x` menu; KeyBinding covers Del, Enter, Ctrl-…
+    pub menu_id: &'static str,        // "stop", "terminate": shown as `x→stop` in the docs
     pub label: &'static str,
     pub safety: Safety,               // Safe | SideEffect | Mutating | Destructive
     pub cli_template: &'static str,   // "aws ec2 stop-instances --instance-ids {id}"
