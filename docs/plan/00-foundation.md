@@ -336,3 +336,26 @@ Measured on this machine (8 cores, Rust 1.98, default linker, dev profile):
   release binary.
 - A faster linker (`mold`/`lld`) isn't installed here and isn't needed yet. Revisit if
   link time of the `fast-aws` binary becomes noticeable.
+
+### Spike 5: suspend/resume around a child process (2026-10-13)
+
+**Result: works.** Tested by driving the real binary in `tmux`, with a sandboxed
+`HOME` (fake profiles) and a stub `aws` script first on `PATH`, so no AWS account
+was touched:
+
+- Pressing `L` on an SSO profile with no cached token:
+  1. paused the input thread
+  2. left the alternate screen
+  3. ran `aws sso login --sso-session acme` with the terminal handed over (its
+     output was visible)
+  4. re-entered the TUI and reloaded identity and the list
+- `q` then exited with status 0, and the shell prompt was intact.
+- The same run confirmed two error paths against real `aws-config` errors:
+  - a missing SSO token is classified as `SsoExpired`
+  - a refused connection is classified as `Network`
+
+**Implementation notes:**
+- Input runs on its own thread, and `pause()` waits until that thread has stopped
+  reading, so the child process gets every keystroke.
+- Resuming re-enables raw mode and the alternate screen directly, instead of calling
+  `ratatui::init()` again, which would stack another panic hook.
