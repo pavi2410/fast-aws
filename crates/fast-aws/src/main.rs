@@ -55,6 +55,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Parsed, String> 
 fn registry() -> Registry {
     let mut registry = Registry::default();
     fast_aws_svc_ec2::register(&mut registry);
+    fast_aws_svc_s3::register(&mut registry);
     registry
 }
 
