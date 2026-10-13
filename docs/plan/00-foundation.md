@@ -298,3 +298,19 @@ The SDK side, from the `aws-sdk-cloudwatchlogs` 1.156.0 source:
 
 Live Tail is billed per session minute, so a live check waits for Phase 2 and the
 user's go-ahead.
+
+### Spike 3: MFA prompting in `aws-config` (2026-10-13)
+
+**Result: not supported.** There's no `mfa_serial` handling anywhere in
+`aws-config` 1.12.0's `src/`.
+
+**Decision:**
+- Profiles with `mfa_serial` show a clear message in the pane ("MFA profiles aren't
+  supported yet; use SSO or `credential_process`"), instead of a confusing STS error.
+- A custom credentials provider with a TUI prompt for the code is added to Phase 5.
+- SSO users (the main target) aren't affected.
+
+The profile-discovery API we need *is* public:
+- `aws_config::profile::load(…)` returns a `ProfileSet` with `profiles()`,
+  `get_profile()`, `sso_sessions()` and `sso_session(name)`.
+- That's enough to group profiles by sso-session without writing our own INI parser.
