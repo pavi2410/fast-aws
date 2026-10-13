@@ -4,6 +4,7 @@
 //! (both are billed per use).
 
 mod insights;
+mod tail;
 
 use async_trait::async_trait;
 use aws_sdk_cloudwatchlogs::Client;
@@ -21,13 +22,14 @@ pub fn register(registry: &mut fast_aws_core::Registry) {
     registry.register(Streams);
     registry.register(Events);
     registry.register(insights::Insights);
+    registry.register(tail::Tail);
 }
 
 /// Separates group and stream in an event list's parent ID. Neither name can
 /// contain a newline.
 const SEP: char = '\n';
 /// Separates timestamp and message in an event row's ID.
-const EVENT_SEP: char = '\u{1f}';
+pub(crate) const EVENT_SEP: char = '\u{1f}';
 
 fn millis_to_secs(ms: Option<i64>) -> Option<i64> {
     ms.map(|ms| ms / 1000)
@@ -102,7 +104,14 @@ async fn list_groups(client: &Client, query: &ListQuery) -> Result<Page, AwsErro
             .iter()
             .map(|g| {
                 let name = g.log_group_name().unwrap_or_default();
-                source(group_row(g)).query('I', insights::PROMPT, "logs:insights", name)
+                let parent = Parent {
+                    id: name.to_owned(),
+                    label: name.to_owned(),
+                    region: None,
+                };
+                source(group_row(g))
+                    .query('I', insights::PROMPT, "logs:insights", name)
+                    .relate_inside("follow live", "logs:tail", parent)
             })
             .collect(),
         next: out.next_token,
