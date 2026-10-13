@@ -364,3 +364,34 @@ was touched:
   reading, so the child process gets every keystroke.
 - Resuming re-enables raw mode and the alternate screen directly, instead of calling
   `ratatui::init()` again, which would stack another panic hook.
+
+#### Spike 8 follow-up: build profiles (2026-10-13)
+
+The workspace had grown to 17 service SDK crates. These are cold and incremental
+builds of the `fast-aws` binary, at `-j 6`, each in its own target directory.
+**Each figure is a single run**, so differences under about 10% are noise.
+
+| Profile | Cold | Incremental | Peak RAM | Binary |
+|---|---|---|---|---|
+| dev (as it was) | 231 s | 3.3 s | 8.4 GiB | 386 MiB |
+| dev, no dependency debug info + `split-debuginfo = "unpacked"` (**adopted**) | 206 s | 2.7 s | 8.1 GiB | 132 MiB |
+| dev, no debug info at all | 188 s | 2.7 s | 8.2 GiB | 125 MiB |
+| release, default | 600 s | 7.8 s | 8.0 GiB | 102 MiB |
+| release + thin LTO | 436 s | 103 s | 8.9 GiB | 59 MiB |
+| release + thin LTO + `codegen-units = 256` | 497 s | 142 s | 8.3 GiB | 65 MiB |
+| release + thin LTO + `panic = "abort"` + `strip` (**adopted**) | 356 s | 93 s | 8.2 GiB | 34 MiB |
+
+Notes:
+- The dev change makes incremental builds the same as having no debug info at all,
+  while keeping line numbers for our own crates.
+- The default release baseline being slower than thin LTO is unusual, and the
+  adopted row changes three settings at once. Treat the release cold times as
+  indicative only; the binary sizes are reliable.
+- `codegen-units = 1` (with thin and with fat LTO) was started but **cancelled with
+  no numbers**. It compiles each huge SDK crate on a single thread, so it is
+  expected to be much slower.
+- Peak memory is about 8–9 GiB at `-j 6`. An earlier build at 8 jobs was killed
+  for lack of memory; if that happens, build with `-j 6`.
+- `panic = "abort"` in release means a panic anywhere, including in a background
+  load, ends the app instead of leaving one pane stuck. The terminal is still
+  restored, because ratatui's panic hook runs before the abort.

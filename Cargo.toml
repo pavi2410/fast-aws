@@ -67,10 +67,10 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 
-# Measured on 8 cores (docs/plan/00-foundation.md, spike 8 follow-up): dropping
-# dependency debug info and keeping it in separate files took incremental
-# rebuilds from 3.3 s to 2.7 s and the dev binary from 386 to 132 MiB, while our
-# own crates keep line numbers for backtraces.
+# Measured on 8 cores, single runs (docs/plan/00-foundation.md, "Spike 8
+# follow-up"): dropping dependency debug info and keeping it in separate files
+# took incremental rebuilds from 3.3 s to 2.7 s and the dev binary from 386 to
+# 132 MiB, while our own crates keep line numbers for backtraces.
 [profile.dev]
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
@@ -78,10 +78,10 @@ split-debuginfo = "unpacked"
 [profile.dev.package."*"]
 debug = false
 
-# Thin LTO, abort-on-panic and stripping made the cold release build faster
-# (356 s vs 600 s) and the binary 34 MiB instead of 102 MiB. The terminal is
-# still restored on panic: ratatui's panic hook runs before the abort.
-# Extra codegen units (256) were slower on every measure, so the default stays.
+# Thin LTO, abort-on-panic and stripping: the release binary is 34 MiB instead
+# of 102 MiB, and the cold build measured faster in a single run. A panic ends
+# the app (the terminal is still restored: ratatui's panic hook runs before the
+# abort). 256 codegen units were slower on every measure; see the same section.
 [profile.release]
 lto = "thin"
 panic = "abort"
