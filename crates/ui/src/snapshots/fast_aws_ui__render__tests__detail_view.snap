@@ -1,0 +1,16 @@
+---
+source: crates/ui/src/render.rs
+expression: render(&app)
+---
+" fast-aws  acme-dev (sso acme) │ 123456789012 │ eu-west  ? help "
+" Things › a  [fields]                                           "
+"  InstanceId: a                                                 "
+"  State: running                                                "
+"  SecurityGroups:                                               "
+"    - GroupId: sg-1                                             "
+"      GroupName: web                                            "
+"  Tags:                                                         "
+"    Name: web-1                                                 "
+"                                                                "
+"                                                                "
+" j/k scroll  tab fields/raw  r refresh  esc back                "

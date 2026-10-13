@@ -3,3 +3,4 @@
 pub mod app;
 pub mod detail;
 pub mod list;
+pub mod render;

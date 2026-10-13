@@ -1,0 +1,16 @@
+---
+source: crates/ui/src/render.rs
+expression: render(&app)
+---
+" fast-aws  acme-dev (sso acme) │ ⚠ credentials │ eu-wes  ? help "
+" Things (0)                                            loading… "
+" ╭────────────────────────────────────────────────────────────╮ "
+" │ SSO session expired                                        │ "
+" │                                                            │ "
+" │ Press L to run `aws sso login --sso-session acme`.         │ "
+" │                                                            │ "
+" │ detail: the SSO token has expired and cannot be refreshed  │ "
+" │                                                            │ "
+" │                                                            │ "
+" ╰────────────────────────────────────────────────────────────╯ "
+" L log in  P profile  q quit                                    "

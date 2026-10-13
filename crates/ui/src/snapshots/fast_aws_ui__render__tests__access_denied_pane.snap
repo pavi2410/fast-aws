@@ -1,0 +1,16 @@
+---
+source: crates/ui/src/render.rs
+expression: render(&app)
+---
+" fast-aws  acme-dev (sso acme) │ 123456789012 │ eu-west  ? help "
+" Things (0)                                                     "
+" ╭────────────────────────────────────────────────────────────╮ "
+" │ Access denied                                              │ "
+" │                                                            │ "
+" │ Profile `acme-dev` is missing a permission this view       │ "
+" │ needs.                                                     │ "
+" │                                                            │ "
+" │ code: UnauthorizedOperation                                │ "
+" │ detail: You are not authorized to perform this operation.  │ "
+" ╰────────────────────────────────────────────────────────────╯ "
+" : jump  / filter  enter describe  r refresh  P profile  R regio"
