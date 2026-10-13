@@ -78,8 +78,9 @@
 - **Throttling is the main risk.** The default throughput for Parameter Store is low,
   and `GetParametersByPath` / `GetParameter` throttle quickly. Use a semaphore of
   about 2, adaptive retry, and cache tree levels aggressively.
-- `PutParameter` with `Overwrite=true` changes the type only if you send it. Always
-  send the original `Type`, `Tier` and `KeyId`.
+- `PutParameter` with `Overwrite=true`: always send the original `Type`, `Tier` and
+  `KeyId`. If `KeyId` is left out for a SecureString, it may be re-encrypted with the
+  default `aws/ssm` key. Check this behaviour in the spike.
 - `GetParameterHistory` on a SecureString returns values *decrypted* if asked. Pass
   `WithDecryption=false` unless the user is revealing.
 - Advanced-tier parameters and policies (expiration) cost money. Show the tier, and
