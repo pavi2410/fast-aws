@@ -54,7 +54,11 @@ impl ResourceKind for UserPools {
             .await
             .map_err(AwsError::from_sdk)?;
         Ok(Page {
-            rows: out.user_pools().iter().map(pool_row).collect(),
+            rows: out
+                .user_pools()
+                .iter()
+                .map(|p| triggers(pool_row(p), p))
+                .collect(),
             next: out.next_token,
         })
     }
@@ -342,6 +346,36 @@ impl ResourceKind for IdentityPools {
     }
 }
 
+/// What `g` offers from a user pool: the Lambda functions it triggers.
+fn triggers(mut row: Row, p: &UserPoolDescriptionType) -> Row {
+    let Some(l) = p.lambda_config() else {
+        return row;
+    };
+    let arns = [
+        ("pre sign-up", l.pre_sign_up()),
+        ("post confirmation", l.post_confirmation()),
+        ("pre authentication", l.pre_authentication()),
+        ("post authentication", l.post_authentication()),
+        ("pre token generation", l.pre_token_generation()),
+        ("custom message", l.custom_message()),
+        ("user migration", l.user_migration()),
+        ("define auth challenge", l.define_auth_challenge()),
+        ("create auth challenge", l.create_auth_challenge()),
+        ("verify auth challenge", l.verify_auth_challenge_response()),
+    ];
+    for (trigger, arn) in arns {
+        if let Some(function) = arn.and_then(fast_aws_core::arn::Arn::parse) {
+            let name = function.name();
+            row = row.relate(
+                format!("{trigger} trigger: {name}"),
+                "lambda:function",
+                name,
+            );
+        }
+    }
+    row
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,5 +437,19 @@ mod tests {
         assert_eq!(drill.kind, "cognito:user");
         assert_eq!(drill.parent.id, "eu-west-1_abc");
         assert_eq!(drill.parent.label, "customers");
+    }
+
+    #[test]
+    fn pools_lead_to_their_trigger_functions() {
+        let pool = UserPoolDescriptionType::builder()
+            .id("p")
+            .lambda_config(
+                aws_sdk_cognitoidentityprovider::types::LambdaConfigType::builder()
+                    .pre_sign_up("arn:aws:lambda:x:1:function:check-domain")
+                    .build(),
+            )
+            .build();
+        let row = triggers(pool_row(&pool), &pool);
+        assert_eq!(row.relations[0].label, "pre sign-up trigger: check-domain");
     }
 }
