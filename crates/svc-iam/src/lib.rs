@@ -5,6 +5,7 @@
 mod permissions;
 mod policy_doc;
 mod principals;
+mod simulation;
 
 use async_trait::async_trait;
 use aws_sdk_iam::Client;
@@ -25,6 +26,7 @@ pub fn register(registry: &mut fast_aws_core::Registry) {
     registry.register(Groups);
     registry.register(Policies);
     registry.register(permissions::Permissions);
+    registry.register(simulation::Simulations);
 }
 
 fn tags(tags: &[Tag]) -> Value {
@@ -96,10 +98,12 @@ async fn list_roles(client: &Client, query: &ListQuery) -> Result<Page, AwsError
             .roles()
             .iter()
             .map(|r| {
-                role_row(r).drill(
-                    "iam:permission",
-                    permissions::parent_for("role", r.role_name()),
-                )
+                role_row(r)
+                    .drill(
+                        "iam:permission",
+                        permissions::parent_for("role", r.role_name()),
+                    )
+                    .query('S', simulation::PROMPT, "iam:simulation", r.arn())
             })
             .collect(),
         next: out.marker,
@@ -191,10 +195,12 @@ impl ResourceKind for Users {
                 .users()
                 .iter()
                 .map(|u| {
-                    user_row(u).drill(
-                        "iam:permission",
-                        permissions::parent_for("user", u.user_name()),
-                    )
+                    user_row(u)
+                        .drill(
+                            "iam:permission",
+                            permissions::parent_for("user", u.user_name()),
+                        )
+                        .query('S', simulation::PROMPT, "iam:simulation", u.arn())
                 })
                 .collect(),
             next: out.marker,
