@@ -232,6 +232,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-cloudfront"
+version = "1.135.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adacdf8fe5928dead8578a0eafa696fd815da46eca827adbd9c4fd92c3f04e69"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-smithy-xml",
+ "aws-types",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-cloudwatchlogs"
 version = "1.156.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1525,6 +1550,7 @@ version = "0.1.0"
 dependencies = [
  "fast-aws-core",
  "fast-aws-svc-apigw",
+ "fast-aws-svc-cloudfront",
  "fast-aws-svc-dynamodb",
  "fast-aws-svc-ec2",
  "fast-aws-svc-iam",
@@ -1561,6 +1587,18 @@ dependencies = [
  "async-trait",
  "aws-sdk-apigateway",
  "aws-sdk-apigatewayv2",
+ "aws-smithy-mocks",
+ "fast-aws-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fast-aws-svc-cloudfront"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-sdk-cloudfront",
  "aws-smithy-mocks",
  "fast-aws-core",
  "serde_json",
