@@ -1,7 +1,10 @@
 //! Secrets Manager: secrets, metadata only.
 //!
-//! This crate never calls `GetSecretValue`. Revealing a value is a deliberate,
-//! billed and audited action that comes with the planned secret-field widget.
+//! Listing and describing never read values. Only [`reveal`] calls
+//! `GetSecretValue`, after `v` and a typed confirmation: it's billed, audited
+//! in CloudTrail, and puts the value on screen.
+
+mod reveal;
 
 use async_trait::async_trait;
 use aws_sdk_secretsmanager::Client;
@@ -16,6 +19,7 @@ use serde_json::{Value, json};
 /// Registers every Secrets Manager resource kind.
 pub fn register(registry: &mut fast_aws_core::Registry) {
     registry.register(Secrets);
+    registry.register(reveal::Values);
 }
 
 pub struct Secrets;
@@ -101,7 +105,14 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
         .await
         .map_err(AwsError::from_sdk)?;
     Ok(Page {
-        rows: out.secret_list().iter().map(row).collect(),
+        rows: out
+            .secret_list()
+            .iter()
+            .map(|s| {
+                let id = s.arn().or(s.name()).unwrap_or_default();
+                row(s).query('v', reveal::PROMPT, "secrets:value", id)
+            })
+            .collect(),
         next: out.next_token,
     })
 }
