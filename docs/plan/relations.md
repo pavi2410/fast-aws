@@ -38,7 +38,12 @@ Rows are the source, the target is in the cell, and the method is in brackets.
 | **Secrets** | | | rotation fn [F] | | | | | | | | | versions [F] | `/aws/reference/…` [N] | | owning DB [F] |
 | **SSM** | | | | | | | | | | | | referenced secret [N] | path siblings | | |
 | **DynamoDB** | | | stream consumers [A] | | | | capacity, throttles [F] | | | | | | | GSIs, replicas, backups [F] | |
+| **Cost Explorer** | `:ec2` [F] | `:s3` [F] | `:fn` [F] | `:apigw` [F] | `:cf` [F] | `:logs` [F] | `:metrics` [F] | | `:userpool` [F] | `:eb` [F] | `:ses` [F] | `:secrets` [F] | `:ssm` [F] | `:ddb` [F] | `:rds` [F] |
 | **RDS** | VPC, SGs [F] | | | | | log exports [N] | CPU, conns [F] | | | | | master secret [F] | | | cluster ↔ instances, snapshots [F] |
+
+(Cost Explorer rows jump from a service's spend to that service's resource list. IAM
+has no cost line, so it has no link. Tag-group → resources comes later; see
+[Cost Explorer](services/cost-explorer.md#relations).)
 
 (KMS keys appear on many rows as a forward ARN. KMS isn't an integrated service in
 v1, so these show the key ARN/alias without a jump.)
