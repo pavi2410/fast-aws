@@ -116,7 +116,17 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
             ),
         ]);
     }
-    let right = Line::from(vec![Span::styled("  ? ", KEY), Span::styled("help ", DIM)]);
+    let right = Line::from(vec![
+        Span::styled(
+            format!(
+                "  {} ",
+                fast_aws_core::fmt::time::zone_label(app.display.utc)
+            ),
+            DIM,
+        ),
+        Span::styled(" ? ", KEY),
+        Span::styled("help ", DIM),
+    ]);
     draw_split(frame, area, Line::from(spans), right);
 }
 
@@ -225,10 +235,18 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
             };
             Some((spec.column, text))
         });
-        Row::new(r.cells.iter().enumerate().map(|(i, c)| match &spark {
-            // Cyan, not dim: it must stay readable on the highlighted row.
-            Some((column, text)) if *column == i => Cell::from(text.clone()).style(SPARK),
-            _ => Cell::from(c.text.as_str()).style(tone(c.tone)),
+        Row::new(r.cells.iter().enumerate().map(|(i, c)| {
+            match &spark {
+                // Cyan, not dim: it must stay readable on the highlighted row.
+                Some((column, text)) if *column == i => Cell::from(text.clone()).style(SPARK),
+                _ => match c.time_ms {
+                    Some(ms) => {
+                        Cell::from(fast_aws_core::fmt::time::show_millis(ms, app.display.utc))
+                            .style(tone(c.tone))
+                    }
+                    None => Cell::from(c.text.as_str()).style(tone(c.tone)),
+                },
+            }
         }))
     });
     let table = Table::new(rows, widths)
@@ -363,7 +381,13 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App, d: &DetailView) {
                         spans.push(Span::raw(" "));
                     }
                 }
-                spans.extend(l.value.map(Span::raw));
+                // Timestamps are stored in UTC and shown in the display zone.
+                spans.extend(l.value.map(|v| {
+                    Span::raw(
+                        fast_aws_core::fmt::time::show_if_timestamp(&v, app.display.utc)
+                            .unwrap_or(v),
+                    )
+                }));
                 Line::from(spans)
             })
             .collect(),
@@ -611,6 +635,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         ("r", "refresh"),
         ("n", "load more (lists stop after 5 pages)"),
         ("P / R", "switch profile / region"),
+        ("Z", "times in local time / UTC"),
         ("L", "SSO login for this profile"),
         (":unlock", "allow actions on a prod profile (this session)"),
         ("esc / q", "back · q quits at the top level"),
@@ -790,6 +815,7 @@ mod tests {
             toml::from_str("[profiles.acme-dev]\nprod = true\nread_only = true").unwrap(),
             false,
         );
+        app.display.utc = true;
         let mut terminal = Terminal::new(TestBackend::new(90, 3)).unwrap();
         terminal.draw(|f| draw(f, &app)).unwrap();
         insta::assert_snapshot!(terminal.backend().to_string());
@@ -843,6 +869,7 @@ mod tests {
         app.display = crate::app::Display {
             borders: true,
             sparkline: fast_aws_core::metrics::SparkStyle::Bars,
+            utc: true,
         };
         let crate::app::Effect::LoadMetrics { scope, .. } = &effects[0] else {
             panic!()

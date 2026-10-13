@@ -162,26 +162,14 @@ mod tests {
 }
 
 /// Timestamps: stored as RFC 3339 UTC text (`2026-10-13T09:00:00Z`) and shown
-/// in the display zone, local by default; `Z` in the app switches to UTC.
+/// in UTC (`utc = true`) or the system's zone (`utc = false`, the default; `Z`
+/// in the app switches).
 pub mod time {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
     use jiff::Timestamp;
     use jiff::tz::TimeZone;
 
-    static UTC: AtomicBool = AtomicBool::new(false);
-
-    /// Show times in UTC (`true`) or the system's zone (`false`).
-    pub fn set_utc(utc: bool) {
-        UTC.store(utc, Ordering::Relaxed);
-    }
-
-    pub fn is_utc() -> bool {
-        UTC.load(Ordering::Relaxed)
-    }
-
-    fn zone() -> TimeZone {
-        if is_utc() {
+    fn zone(utc: bool) -> TimeZone {
+        if utc {
             TimeZone::UTC
         } else {
             TimeZone::system()
@@ -189,8 +177,8 @@ pub mod time {
     }
 
     /// The display zone's name for the header, e.g. `UTC` or `IST`.
-    pub fn zone_label() -> String {
-        if is_utc() {
+    pub fn zone_label(utc: bool) -> String {
+        if utc {
             return "UTC".into();
         }
         let now = Timestamp::now().to_zoned(TimeZone::system());
@@ -213,13 +201,13 @@ pub mod time {
     }
 
     /// Milliseconds since the epoch, shown in the display zone.
-    pub fn show_millis(ms: i64) -> String {
-        Timestamp::from_millisecond(ms).map_or_else(|_| ms.to_string(), |t| show_in(t, &zone()))
+    pub fn show_millis(ms: i64, utc: bool) -> String {
+        Timestamp::from_millisecond(ms).map_or_else(|_| ms.to_string(), |t| show_in(t, &zone(utc)))
     }
 
     /// `text` shown in the display zone if it's a full RFC 3339 timestamp.
-    pub fn show_if_timestamp(text: &str) -> Option<String> {
-        show_text_in(text, &zone())
+    pub fn show_if_timestamp(text: &str, utc: bool) -> Option<String> {
+        show_text_in(text, &zone(utc))
     }
 
     fn show_text_in(text: &str, zone: &TimeZone) -> Option<String> {
@@ -249,8 +237,12 @@ pub mod time {
             assert_eq!(iso_millis(0), "1970-01-01T00:00:00Z");
             let t: Timestamp = "2026-10-13T09:00:00Z".parse().unwrap();
             assert_eq!(show_in(t, &TimeZone::UTC), "2026-10-13 09:00:00");
-            let plus_two = TimeZone::fixed(jiff::tz::offset(2));
-            assert_eq!(show_in(t, &plus_two), "2026-10-13 11:00:00");
+            assert_eq!(
+                show_in(t, &TimeZone::fixed(jiff::tz::offset(2))),
+                "2026-10-13 11:00:00"
+            );
+            assert_eq!(show_millis(0, true), "1970-01-01 00:00:00");
+            assert_eq!(zone_label(true), "UTC");
         }
 
         #[test]

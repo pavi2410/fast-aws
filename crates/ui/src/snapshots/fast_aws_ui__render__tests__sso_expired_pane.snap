@@ -2,7 +2,7 @@
 source: crates/ui/src/render.rs
 expression: render(&app)
 ---
-" fast-aws  acme-dev (sso acme) │ ⚠ session expired │ eu  ? help "
+" fast-aws  acme-dev (sso acme) │ ⚠ session expired  UTC  ? help "
 " Things (0)                                            loading… "
 " ╭────────────────────────────────────────────────────────────╮ "
 " │ SSO session expired                                        │ "

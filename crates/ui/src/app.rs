@@ -57,6 +57,8 @@ pub struct Display {
     /// Frame lists and details.
     pub borders: bool,
     pub sparkline: fast_aws_core::metrics::SparkStyle,
+    /// Show times in UTC instead of the local zone (`Z`).
+    pub utc: bool,
 }
 
 /// Profile, region and kind a sparkline request was made for.
@@ -246,7 +248,9 @@ impl App {
         self.display = Display {
             borders: config.borders,
             sparkline: config.sparkline,
+            utc: false,
         };
+        self.display.utc = config.timezone == fast_aws_core::config::TimeZoneSetting::Utc;
         self.config = config;
         self.read_only_flag = read_only_flag;
         self.guard = Guard::new(&self.config, &self.profile, read_only_flag);
@@ -498,6 +502,16 @@ impl App {
                 Vec::new()
             }
             KeyCode::Char('L') => self.login(),
+            KeyCode::Char('Z') => {
+                self.display.utc = !self.display.utc;
+                let zone = if self.display.utc {
+                    "UTC"
+                } else {
+                    "local time"
+                };
+                self.flash = Some(format!("times in {zone}"));
+                Vec::new()
+            }
             KeyCode::Char('g') => {
                 self.relations_menu = self.relations_of_selected();
                 if self.relations_menu.is_empty() {
@@ -1050,14 +1064,17 @@ pub(crate) mod tests {
         registry.register(FakeKind);
         registry.register(FakeChild);
         let kind = registry.find("thing").unwrap();
-        App::new(
+        let mut app = App::new(
             registry,
             catalog(),
             "acme-dev".into(),
             "eu-west-1".into(),
             kind,
         )
-        .0
+        .0;
+        // UTC, so snapshots are the same on every machine.
+        app.display.utc = true;
+        app
     }
 
     pub(crate) fn app() -> App {
@@ -1092,6 +1109,7 @@ pub(crate) mod tests {
                 next: None,
             }),
         });
+        app.display.utc = true; // see empty_app
         app
     }
 
@@ -1652,6 +1670,23 @@ pub(crate) mod tests {
                 .iter()
                 .all(|e| !matches!(e, Effect::LoadMetrics { .. }))
         );
+    }
+
+    #[test]
+    fn z_switches_between_local_time_and_utc() {
+        let mut registry = Registry::default();
+        registry.register(FakeKind);
+        let kind = registry.find("thing").unwrap();
+        let (mut app, _) = App::new(registry, catalog(), "p".into(), "r".into(), kind);
+        assert!(!app.display.utc, "local by default");
+        press(&mut app, "Z");
+        assert!(app.display.utc);
+        assert_eq!(app.flash.as_deref(), Some("times in UTC"));
+        press(&mut app, "Z");
+        assert_eq!(app.flash.as_deref(), Some("times in local time"));
+        let mut app = super::tests::app();
+        app.set_safety(toml::from_str("timezone = \"utc\"").unwrap(), false);
+        assert!(app.display.utc);
     }
 
     #[test]
