@@ -33,7 +33,7 @@ const COLUMNS: &[Column] = &[Column::fill("RESOURCE", 2), Column::fill("JUMP WIT
 impl ResourceKind for Home {
     kind_info! {
         id: HOME,
-        title: "fast-aws",
+        title: "All resources",
         aliases: ["all"],
         // No AWS calls, so nothing to reload on a region switch.
         scope: Scope::Global,
