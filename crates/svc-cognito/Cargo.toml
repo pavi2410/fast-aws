@@ -1,0 +1,23 @@
+[package]
+name = "fast-aws-svc-cognito"
+description = "cognito resource kinds for fast-aws"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+aws-sdk-cognitoidentity.workspace = true
+aws-sdk-cognitoidentityprovider.workspace = true
+fast-aws-core.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+aws-sdk-cognitoidentity = { workspace = true, features = ["test-util"] }
+aws-sdk-cognitoidentityprovider = { workspace = true, features = ["test-util"] }
+aws-smithy-mocks.workspace = true
+
+[lints]
+workspace = true

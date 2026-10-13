@@ -12,6 +12,7 @@ license = "MIT OR Apache-2.0"
 fast-aws-core = { path = "crates/core" }
 fast-aws-ui = { path = "crates/ui" }
 fast-aws-svc-ec2 = { path = "crates/svc-ec2" }
+fast-aws-svc-cognito = { path = "crates/svc-cognito" }
 fast-aws-svc-events = { path = "crates/svc-events" }
 fast-aws-svc-cloudfront = { path = "crates/svc-cloudfront" }
 fast-aws-svc-secrets = { path = "crates/svc-secrets" }
@@ -27,6 +28,8 @@ fast-aws-svc-s3 = { path = "crates/svc-s3" }
 async-trait = "0.1"
 aws-config = { version = "1.12", features = ["behavior-version-latest", "credentials-login"] }
 aws-runtime = "1.9"
+aws-sdk-cognitoidentity = "1.116"
+aws-sdk-cognitoidentityprovider = "1.139"
 aws-sdk-eventbridge = "1.122"
 aws-sdk-scheduler = "1.114"
 aws-sdk-cloudfront = "1.135"

@@ -283,6 +283,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-cognitoidentity"
+version = "1.116.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e16d8246c1073ae0bff241bc1a16b458aa521e70eb7f25a6237666314b2b7ae"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sdk-cognitoidentityprovider"
+version = "1.139.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d5eb62b57e0d1565fb7ea7de94a53357fc85f119a9be58e0769eee9270ac3f7"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-dynamodb"
 version = "1.130.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1601,6 +1651,7 @@ dependencies = [
  "fast-aws-core",
  "fast-aws-svc-apigw",
  "fast-aws-svc-cloudfront",
+ "fast-aws-svc-cognito",
  "fast-aws-svc-dynamodb",
  "fast-aws-svc-ec2",
  "fast-aws-svc-events",
@@ -1650,6 +1701,19 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "aws-sdk-cloudfront",
+ "aws-smithy-mocks",
+ "fast-aws-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fast-aws-svc-cognito"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-sdk-cognitoidentity",
+ "aws-sdk-cognitoidentityprovider",
  "aws-smithy-mocks",
  "fast-aws-core",
  "serde_json",
