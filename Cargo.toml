@@ -13,6 +13,7 @@ fast-aws-ui = { path = "crates/ui" }
 
 async-trait = "0.1"
 aws-config = { version = "1.12", features = ["behavior-version-latest"] }
+aws-runtime = "1.9"
 aws-sdk-sts = "1.119"
 aws-smithy-runtime-api = { version = "1.19", features = ["client"] }
 aws-smithy-types = "1.8"
