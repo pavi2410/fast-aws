@@ -126,6 +126,11 @@ pub struct ActionSpec {
     session, so their cached clients and views are refreshed.
   - Later, the login could run inside the TUI using the `ssooidc` device flow,
     removing the need for the AWS CLI.
+- **Console credentials from `aws login`** (`login_session = <arn>` on the profile)
+  need `aws-config`'s optional `credentials-login` feature, which is enabled in the
+  workspace. These profiles behave like SSO ones:
+  - an expired or missing cached Login token shows the "session expired" pane
+  - `L` runs `aws login --profile <name>`
 - **MFA (`mfa_serial`):** check whether `aws-config` can prompt for a code. If not,
   give the user the profile's MFA prompt in a dialog using a custom credentials provider.
 
