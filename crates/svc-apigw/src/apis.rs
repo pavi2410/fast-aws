@@ -5,8 +5,8 @@ use aws_sdk_apigateway::Client as RestClient;
 use aws_sdk_apigatewayv2::Client as V2Client;
 use fast_aws_core::fmt::{age_of, or_dash};
 use fast_aws_core::{
-    AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
-    kind_info,
+    AwsError, Cell, Column, Ctx, Detail, ErrorKind, ListQuery, Page, Parent, ResourceKind, Row,
+    Scope, Tone, kind_info,
 };
 use serde_json::{Value, json};
 
@@ -63,8 +63,11 @@ async fn list(
         Some(t) => list_v2(v2, t.strip_prefix("v2:").filter(|t| !t.is_empty())).await,
     }
     .or_else(|err| {
-        // REST failed: show why, and carry on with v2 on the next page.
-        if next.is_none_or(|t| t.starts_with("rest:")) {
+        // Listing REST APIs was denied: show why, and carry on with v2 on the
+        // next page. Anything else (expired session, throttling, no network)
+        // would fail v2 too, so it fails the list and shows in the error pane.
+        let rest_failed = next.is_none_or(|t| t.starts_with("rest:"));
+        if rest_failed && err.kind == ErrorKind::AccessDenied {
             Ok(Page {
                 rows: vec![error_row("REST APIs", &err)],
                 next: Some("v2:".into()),
@@ -308,6 +311,18 @@ mod tests {
         assert_eq!(second.rows[0].cells[1].text, "WEBSOCKET");
         assert_eq!(second.next.as_deref(), Some("v2:n2"));
         assert_eq!(second.rows[0].drill.as_ref().unwrap().parent.id, "v2:xyz");
+    }
+
+    #[tokio::test]
+    async fn other_rest_failures_fail_the_list() {
+        let rest_rule = mock!(RestClient::get_rest_apis).then_error(|| {
+            GetRestApisError::generic(ErrorMetadata::builder().code("ThrottlingException").build())
+        });
+        let rest = mock_client!(aws_sdk_apigateway, [&rest_rule]);
+        let v2 = mock_client!(aws_sdk_apigatewayv2, []);
+
+        let err = list(&rest, &v2, "eu-west-1", None).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Throttled);
     }
 
     #[tokio::test]
