@@ -1924,6 +1924,7 @@ dependencies = [
  "aws-sdk-iam",
  "aws-smithy-mocks",
  "fast-aws-core",
+ "futures-util",
  "serde_json",
  "tokio",
 ]

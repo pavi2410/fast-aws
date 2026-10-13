@@ -2,6 +2,7 @@
 //!
 //! IAM is global; the runtime sends these calls to `us-east-1`.
 
+mod permissions;
 mod policy_doc;
 mod principals;
 
@@ -23,6 +24,7 @@ pub fn register(registry: &mut fast_aws_core::Registry) {
     registry.register(Users);
     registry.register(Groups);
     registry.register(Policies);
+    registry.register(permissions::Permissions);
 }
 
 fn tags(tags: &[Tag]) -> Value {
@@ -90,7 +92,16 @@ async fn list_roles(client: &Client, query: &ListQuery) -> Result<Page, AwsError
         .await
         .map_err(AwsError::from_sdk)?;
     Ok(Page {
-        rows: out.roles().iter().map(role_row).collect(),
+        rows: out
+            .roles()
+            .iter()
+            .map(|r| {
+                role_row(r).drill(
+                    "iam:permission",
+                    permissions::parent_for("role", r.role_name()),
+                )
+            })
+            .collect(),
         next: out.marker,
     })
 }
@@ -176,7 +187,16 @@ impl ResourceKind for Users {
             .await
             .map_err(AwsError::from_sdk)?;
         Ok(Page {
-            rows: out.users().iter().map(user_row).collect(),
+            rows: out
+                .users()
+                .iter()
+                .map(|u| {
+                    user_row(u).drill(
+                        "iam:permission",
+                        permissions::parent_for("user", u.user_name()),
+                    )
+                })
+                .collect(),
             next: out.marker,
         })
     }
