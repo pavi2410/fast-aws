@@ -160,3 +160,118 @@ mod tests {
         assert_eq!(or_dash(Some("x")), "x");
     }
 }
+
+/// Timestamps: stored as RFC 3339 UTC text (`2026-10-13T09:00:00Z`) and shown
+/// in the display zone, local by default; `Z` in the app switches to UTC.
+pub mod time {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use jiff::Timestamp;
+    use jiff::tz::TimeZone;
+
+    static UTC: AtomicBool = AtomicBool::new(false);
+
+    /// Show times in UTC (`true`) or the system's zone (`false`).
+    pub fn set_utc(utc: bool) {
+        UTC.store(utc, Ordering::Relaxed);
+    }
+
+    pub fn is_utc() -> bool {
+        UTC.load(Ordering::Relaxed)
+    }
+
+    fn zone() -> TimeZone {
+        if is_utc() {
+            TimeZone::UTC
+        } else {
+            TimeZone::system()
+        }
+    }
+
+    /// The display zone's name for the header, e.g. `UTC` or `IST`.
+    pub fn zone_label() -> String {
+        if is_utc() {
+            return "UTC".into();
+        }
+        let now = Timestamp::now().to_zoned(TimeZone::system());
+        now.strftime("%Z").to_string()
+    }
+
+    /// Milliseconds since the epoch as stored text: RFC 3339 in UTC.
+    pub fn iso_millis(ms: i64) -> String {
+        match Timestamp::from_millisecond(ms) {
+            Ok(t) => t.strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            Err(_) => ms.to_string(),
+        }
+    }
+
+    /// A stored timestamp shown in `zone`: `2026-10-13 14:30:00`.
+    pub fn show_in(t: Timestamp, zone: &TimeZone) -> String {
+        t.to_zoned(zone.clone())
+            .strftime("%Y-%m-%d %H:%M:%S")
+            .to_string()
+    }
+
+    /// Milliseconds since the epoch, shown in the display zone.
+    pub fn show_millis(ms: i64) -> String {
+        Timestamp::from_millisecond(ms).map_or_else(|_| ms.to_string(), |t| show_in(t, &zone()))
+    }
+
+    /// `text` shown in the display zone if it's a full RFC 3339 timestamp.
+    pub fn show_if_timestamp(text: &str) -> Option<String> {
+        show_text_in(text, &zone())
+    }
+
+    fn show_text_in(text: &str, zone: &TimeZone) -> Option<String> {
+        // Only strings that look like one, so names and IDs are never touched.
+        if text.len() < 20 || !text.as_bytes().get(10).is_some_and(|b| *b == b'T') {
+            return None;
+        }
+        text.parse::<Timestamp>().ok().map(|t| show_in(t, zone))
+    }
+
+    /// A UTC date-time without a zone (`2026-10-13 09:00:00.000`, as Logs
+    /// Insights returns them) as milliseconds since the epoch.
+    pub fn utc_civil_to_millis(text: &str) -> Option<i64> {
+        let civil: jiff::civil::DateTime = text.trim().replace(' ', "T").parse().ok()?;
+        civil
+            .to_zoned(TimeZone::UTC)
+            .ok()
+            .map(|z| z.timestamp().as_millisecond())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn stored_as_utc_shown_in_a_zone() {
+            assert_eq!(iso_millis(0), "1970-01-01T00:00:00Z");
+            let t: Timestamp = "2026-10-13T09:00:00Z".parse().unwrap();
+            assert_eq!(show_in(t, &TimeZone::UTC), "2026-10-13 09:00:00");
+            let plus_two = TimeZone::fixed(jiff::tz::offset(2));
+            assert_eq!(show_in(t, &plus_two), "2026-10-13 11:00:00");
+        }
+
+        #[test]
+        fn only_real_timestamps_are_converted() {
+            let plus_two = TimeZone::fixed(jiff::tz::offset(2));
+            assert_eq!(
+                show_text_in("2026-10-13T09:00:00Z", &plus_two).as_deref(),
+                Some("2026-10-13 11:00:00")
+            );
+            assert_eq!(
+                show_text_in("2026-10-13T09:00:00.123Z", &plus_two).as_deref(),
+                Some("2026-10-13 11:00:00")
+            );
+            assert_eq!(show_text_in("i-0123456789abcdefg", &plus_two), None);
+            assert_eq!(show_text_in("2026-10-12", &plus_two), None);
+        }
+
+        #[test]
+        fn insights_times_are_utc() {
+            assert_eq!(utc_civil_to_millis("1970-01-01 00:00:01.000"), Some(1000));
+            assert_eq!(utc_civil_to_millis("not a time"), None);
+        }
+    }
+}

@@ -6,6 +6,7 @@
 //! metrics = true               # sparklines (GetMetricData is billed per metric)
 //! sparkline = "bars"           # or "dots" (the default)
 //! borders = true               # frame lists and details
+//! timezone = "utc"             # or "local" (the default); Z switches in the app
 //!
 //! [profiles.generex-qa-ro]
 //! read_only = true
@@ -37,8 +38,20 @@ pub struct Config {
     /// Draw lists and details inside a frame.
     #[serde(default)]
     pub borders: bool,
+    /// Show timestamps in `"local"` time (the default) or `"utc"`; `Z` in the
+    /// app switches.
+    #[serde(default)]
+    pub timezone: TimeZoneSetting,
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfig>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TimeZoneSetting {
+    #[default]
+    Local,
+    Utc,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -164,6 +177,8 @@ mod tests {
             crate::metrics::SparkStyle::Dots
         );
         assert!(toml::from_str::<Config>("sparkline = \"lines\"").is_err());
+        assert_eq!(parse("timezone = \"utc\"").timezone, TimeZoneSetting::Utc);
+        assert_eq!(Config::default().timezone, TimeZoneSetting::Local);
     }
 
     #[test]

@@ -82,6 +82,9 @@ pub enum Tone {
 pub struct Cell {
     pub text: String,
     pub tone: Tone,
+    /// For a timestamp cell: milliseconds since the epoch, drawn in the display
+    /// zone (local or UTC) while `text` holds the UTC form for filtering.
+    pub time_ms: Option<i64>,
 }
 
 impl Cell {
@@ -89,6 +92,16 @@ impl Cell {
         Self {
             text: text.into(),
             tone: Tone::Normal,
+            time_ms: None,
+        }
+    }
+
+    /// A timestamp, shown in the display zone.
+    pub fn time(ms: i64) -> Self {
+        Self {
+            text: crate::fmt::time::iso_millis(ms),
+            tone: Tone::Normal,
+            time_ms: Some(ms),
         }
     }
 
@@ -96,6 +109,7 @@ impl Cell {
         Self {
             text: text.into(),
             tone,
+            time_ms: None,
         }
     }
 }
