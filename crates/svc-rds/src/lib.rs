@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use aws_sdk_rds::Client;
 use aws_sdk_rds::types::{DbCluster, DbClusterSnapshot, DbInstance, DbSnapshot, Tag};
 use fast_aws_core::fmt::{age_of, or_dash};
+use fast_aws_core::metrics::{MetricSpec, Summary};
 use fast_aws_core::{
     AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
     kind_info,
@@ -71,6 +72,7 @@ const DB_COLUMNS: &[Column] = &[
     Column::fixed("STATUS", 12),
     Column::fill("ROLE", 2),
     Column::fill("ENDPOINT", 3),
+    Column::fixed("CPU 24h (peak)", 30),
 ];
 
 #[async_trait]
@@ -156,6 +158,7 @@ fn cluster_row(c: &DbCluster) -> Row {
             status_cell(c.status()),
             format!("cluster ({members} instances)").into(),
             or_dash(c.endpoint()).into(),
+            "".into(),
         ],
     )
 }
@@ -181,8 +184,18 @@ fn instance_row(i: &DbInstance) -> Row {
             status_cell(i.db_instance_status()),
             role.into(),
             endpoint.into(),
+            "".into(),
         ],
     )
+    .metric(MetricSpec {
+        namespace: "AWS/RDS",
+        name: "CPUUtilization",
+        dimensions: vec![("DBInstanceIdentifier", name.to_owned())],
+        stat: "Average",
+        summary: Summary::Peak,
+        unit: "%",
+        column: 6,
+    })
 }
 
 async fn describe_cluster(client: &Client, name: &str) -> Result<Detail, AwsError> {
