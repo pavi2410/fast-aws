@@ -41,13 +41,18 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Screen::List => {
             draw_list_title(frame, title, app);
             match app.blocking_error().filter(|_| app.list.total() == 0) {
+                // The error pane has its own frame.
                 Some(err) => draw_error(frame, body, app, err),
-                None => draw_table(frame, body, app),
+                None => {
+                    let inner = framed(frame, body, app);
+                    draw_table(frame, inner, app)
+                }
             }
         }
         Screen::Detail(d) => {
             draw_detail_title(frame, title, d);
-            draw_detail(frame, body, app, d);
+            let inner = framed(frame, body, app);
+            draw_detail(frame, inner, app, d);
         }
     }
     draw_footer(frame, footer, app);
@@ -127,6 +132,19 @@ fn draw_split(frame: &mut Frame, area: Rect, left: Line, right: Line) {
     frame.render_widget(right, r);
 }
 
+/// With `borders = true`, draws a frame around `area` and returns its inside.
+fn framed(frame: &mut Frame, area: Rect, app: &App) -> Rect {
+    if !app.display.borders {
+        return area;
+    }
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(DIM);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    inner
+}
+
 fn draw_list_title(frame: &mut Frame, area: Rect, app: &App) {
     let list = &app.list;
     let count = if list.filter.is_empty() {
@@ -197,7 +215,12 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
         // A fetched sparkline replaces its cell; one being fetched shows `…`.
         let spark = r.metric.as_ref().and_then(|spec| {
             let text = match app.sparkline(&r.id)? {
-                Some(points) => fast_aws_core::metrics::sparkline(points, spec.summary, spec.unit),
+                Some(points) => fast_aws_core::metrics::sparkline_in(
+                    app.display.sparkline,
+                    points,
+                    spec.summary,
+                    spec.unit,
+                ),
                 None => "…".to_owned(),
             };
             Some((spec.column, text))
@@ -811,6 +834,27 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(110, 6)).unwrap();
         terminal.draw(|f| draw(f, &app)).unwrap();
         insta::assert_snapshot!(terminal.backend().to_string());
+    }
+
+    #[test]
+    fn bordered_layout_with_bar_sparklines() {
+        let (mut app, effects) = crate::app::tests::app_with_metrics(true);
+        ready(&mut app);
+        app.display = crate::app::Display {
+            borders: true,
+            sparkline: fast_aws_core::metrics::SparkStyle::Bars,
+        };
+        let crate::app::Effect::LoadMetrics { scope, .. } = &effects[0] else {
+            panic!()
+        };
+        app.handle_msg(Msg::Metrics {
+            scope: scope.clone(),
+            result: Ok(std::collections::HashMap::from([(
+                "a".to_owned(),
+                vec![0.0, 1.0, 4.0, 2.0],
+            )])),
+        });
+        insta::assert_snapshot!(render(&app));
     }
 
     #[test]

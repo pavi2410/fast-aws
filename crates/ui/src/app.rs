@@ -51,6 +51,14 @@ const SPARK_BATCH: usize = 60;
 /// How long fetched sparklines are reused before they're fetched again.
 const SPARK_TTL: Duration = Duration::from_secs(600);
 
+/// How things are drawn, from the config file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Display {
+    /// Frame lists and details.
+    pub borders: bool,
+    pub sparkline: fast_aws_core::metrics::SparkStyle,
+}
+
 /// Profile, region and kind a sparkline request was made for.
 pub type SparkScope = (String, String, &'static str);
 type SparkKey = (String, String, &'static str, String);
@@ -174,6 +182,7 @@ pub struct App {
     pub should_quit: bool,
     /// Which action classes the current profile allows; see [`Guard`].
     pub guard: Guard,
+    pub display: Display,
     /// What the open `g` menu lists: the row's own relations, then reverse ones
     /// found in cached lists.
     pub relations_menu: Vec<Relation>,
@@ -209,6 +218,7 @@ impl App {
             flash: None,
             should_quit: false,
             guard: Guard::new(&Config::default(), "", false),
+            display: Display::default(),
             cache: Cache::default(),
             relations_menu: Vec::new(),
             metrics_enabled: false,
@@ -233,6 +243,10 @@ impl App {
     /// Applies the config file and `--read-only` to the current profile and to
     /// every profile switched to later.
     pub fn set_safety(&mut self, config: Config, read_only_flag: bool) {
+        self.display = Display {
+            borders: config.borders,
+            sparkline: config.sparkline,
+        };
         self.config = config;
         self.read_only_flag = read_only_flag;
         self.guard = Guard::new(&self.config, &self.profile, read_only_flag);
