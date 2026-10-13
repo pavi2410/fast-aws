@@ -3,7 +3,11 @@
 
 use std::sync::Arc;
 
+use std::time::Instant;
+
 use fast_aws_core::{AwsError, Parent, ResourceKind, Row};
+
+use crate::cache::Entry;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoadStatus {
@@ -30,6 +34,8 @@ pub struct ListView {
     selected: usize,
     /// Set by a refresh: the old rows stay on screen until the first new page arrives.
     replace_on_next_page: bool,
+    /// When the rows on screen came from the cache, when they were stored.
+    pub cached_at: Option<Instant>,
 }
 
 impl ListView {
@@ -48,6 +54,41 @@ impl ListView {
             visible: Vec::new(),
             selected: 0,
             replace_on_next_page: false,
+            cached_at: None,
+        }
+    }
+
+    /// A list shown from the cache. With `refresh`, it reloads at once, keeping
+    /// the cached rows on screen until the first new page arrives.
+    pub fn from_cache(
+        kind: Arc<dyn ResourceKind>,
+        parent: Option<Parent>,
+        generation: u64,
+        entry: &Entry,
+        refresh: bool,
+    ) -> Self {
+        let mut list = Self::inside(kind, parent, generation);
+        list.push_page(entry.rows.clone(), entry.more.is_none());
+        if let Some(more) = &entry.more {
+            list.pause(more.clone());
+        }
+        list.cached_at = Some(entry.stored_at);
+        if refresh {
+            list.reload(generation);
+        }
+        list
+    }
+
+    /// Every loaded row, filtered or not.
+    pub fn rows(&self) -> &[Row] {
+        &self.rows
+    }
+
+    /// The token to continue from, when loading paused at the page limit.
+    pub fn more(&self) -> Option<&str> {
+        match &self.status {
+            LoadStatus::More(next) => Some(next),
+            _ => None,
         }
     }
 
@@ -63,6 +104,7 @@ impl ListView {
         let selected_id = self.selected_row().map(|r| r.id.clone());
         if std::mem::take(&mut self.replace_on_next_page) {
             self.rows.clear();
+            self.cached_at = None;
         }
         self.rows.extend(rows);
         if last {

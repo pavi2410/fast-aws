@@ -6,12 +6,14 @@ use std::sync::Arc;
 
 use fast_aws_core::profiles::{ProfileCatalog, ProfileInfo};
 use fast_aws_core::{
-    AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Registry, ResourceKind, Scope,
+    AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Parent, Registry,
+    ResourceKind, Scope,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::cache::{Cache, CacheKey};
 use crate::detail::{DetailState, DetailView};
-use crate::list::ListView;
+use crate::list::{ListView, LoadStatus};
 
 /// Regions offered by `R`. A live list from `DescribeRegions` comes with the Phase 2 cache.
 pub const REGIONS: &[&str] = &[
@@ -141,6 +143,7 @@ pub struct App {
     pub should_quit: bool,
     /// Which action classes the current profile allows; see [`Guard`].
     pub guard: Guard,
+    cache: Cache,
     config: Config,
     read_only_flag: bool,
     next_generation: u64,
@@ -170,6 +173,7 @@ impl App {
             flash: None,
             should_quit: false,
             guard: Guard::new(&Config::default(), "", false),
+            cache: Cache::default(),
             config: Config::default(),
             read_only_flag: false,
             next_generation: 2,
@@ -247,12 +251,14 @@ impl App {
                     Ok(page) => {
                         let last = page.next.is_none();
                         self.list.push_page(page.rows, last);
+                        self.remember_list();
                     }
                     Err(e) => self.list.fail(e),
                 }
             }
             Msg::Paused { generation, next } if generation == self.list.generation => {
                 self.list.pause(next);
+                self.remember_list();
             }
             Msg::Detail { generation, result } => {
                 if let Screen::Detail(d) = &mut self.screen
@@ -392,16 +398,52 @@ impl App {
             self.flash = Some(format!("{} isn't available in this build", drill.kind));
             return Vec::new();
         };
-        let generation = self.generation();
-        let child = ListView::inside(kind, Some(drill.parent), generation);
+        let (child, load) = self.list_for(kind, Some(drill.parent));
         self.back.push(std::mem::replace(&mut self.list, child));
-        vec![
-            Effect::CancelLoads,
-            Effect::LoadList {
-                generation,
-                from: None,
-            },
-        ]
+        std::iter::once(Effect::CancelLoads).chain(load).collect()
+    }
+
+    /// A list of `kind` in `parent`: from the cache when there is one (refreshed
+    /// in the background unless the kind opts out), else empty. Also returns the
+    /// load to start, if any.
+    fn list_for(
+        &mut self,
+        kind: Arc<dyn ResourceKind>,
+        parent: Option<Parent>,
+    ) -> (ListView, Option<Effect>) {
+        let generation = self.generation();
+        let load = Effect::LoadList {
+            generation,
+            from: None,
+        };
+        let key = self.cache_key(kind.id(), parent.as_ref());
+        match self.cache.get(&key) {
+            Some(entry) => {
+                let refresh = kind.refresh_on_open();
+                let list = ListView::from_cache(kind, parent, generation, entry, refresh);
+                (list, refresh.then_some(load))
+            }
+            None => (ListView::inside(kind, parent, generation), Some(load)),
+        }
+    }
+
+    fn cache_key(&self, kind: &'static str, parent: Option<&Parent>) -> CacheKey {
+        CacheKey {
+            profile: self.profile.clone(),
+            region: self.region.clone(),
+            kind,
+            parent: parent.map(|p| p.id.clone()),
+        }
+    }
+
+    /// Stores the current list once it has stopped loading.
+    fn remember_list(&mut self) {
+        if self.list.is_loading() || matches!(self.list.status, LoadStatus::Failed(_)) {
+            return;
+        }
+        let key = self.cache_key(self.list.kind.id(), self.list.parent.as_ref());
+        let more = self.list.more().map(str::to_owned);
+        self.cache.put(key, self.list.rows().to_vec(), more);
     }
 
     /// Returns to the list drilled out of. It's reloaded if its load was cut short.
@@ -525,17 +567,11 @@ impl App {
             }
             return Vec::new();
         };
-        let generation = self.generation();
-        self.list = ListView::new(kind, generation);
+        let (list, load) = self.list_for(kind, None);
+        self.list = list;
         self.back.clear();
         self.screen = Screen::List;
-        vec![
-            Effect::CancelLoads,
-            Effect::LoadList {
-                generation,
-                from: None,
-            },
-        ]
+        std::iter::once(Effect::CancelLoads).chain(load).collect()
     }
 
     fn filter_key(&mut self, key: KeyEvent) -> Vec<Effect> {
@@ -625,9 +661,9 @@ impl App {
     /// Starts over in the current profile and region: back to the top-level list
     /// (drilled-into parents may not exist there), reloaded.
     fn reload_context(&mut self, identity_too: bool) -> Vec<Effect> {
-        let generation = self.generation();
         let root = self.back.first().unwrap_or(&self.list).kind.clone();
-        self.list = ListView::new(root, generation);
+        let (list, load) = self.list_for(root, None);
+        self.list = list;
         self.back.clear();
         self.screen = Screen::List;
         let mut effects = vec![Effect::CancelLoads];
@@ -638,10 +674,7 @@ impl App {
                 generation: self.identity_generation,
             });
         }
-        effects.push(Effect::LoadList {
-            generation,
-            from: None,
-        });
+        effects.extend(load);
         effects
     }
 
@@ -695,6 +728,22 @@ pub(crate) mod tests {
             ],
             selected: "acme-dev".into(),
         }
+    }
+
+    /// The app before any list has loaded.
+    pub(crate) fn empty_app() -> App {
+        let mut registry = Registry::default();
+        registry.register(FakeKind);
+        registry.register(FakeChild);
+        let kind = registry.find("thing").unwrap();
+        App::new(
+            registry,
+            catalog(),
+            "acme-dev".into(),
+            "eu-west-1".into(),
+            kind,
+        )
+        .0
     }
 
     pub(crate) fn app() -> App {
@@ -904,6 +953,86 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_cached_list_reopens_instantly_and_refreshes() {
+        let mut app = app();
+        app.handle_key(key(KeyCode::Enter)); // into web-1's parts
+        app.handle_msg(Msg::Page {
+            generation: 2,
+            result: Ok(Page {
+                rows: vec![row("p1", "bolt")],
+                next: None,
+            }),
+        });
+        app.handle_key(key(KeyCode::Esc));
+        let effects = app.handle_key(key(KeyCode::Enter)); // and in again
+        assert_eq!(app.list.total(), 1, "shown from the cache straight away");
+        assert!(effects.contains(&Effect::LoadList {
+            generation: 3,
+            from: None
+        }));
+        // The refresh replaces the cached rows.
+        app.handle_msg(Msg::Page {
+            generation: 3,
+            result: Ok(Page {
+                rows: vec![row("p1", "bolt"), row("p2", "nut")],
+                next: None,
+            }),
+        });
+        assert_eq!(app.list.total(), 2);
+        assert!(app.list.cached_at.is_none());
+    }
+
+    #[test]
+    fn a_failed_or_unfinished_load_is_not_cached() {
+        let mut app = empty_app();
+        app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![row("a", "x")],
+                next: Some("t".into()),
+            }),
+        });
+        press(&mut app, ":thing"); // reopen while the first load was still going
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.list.total(), 0);
+    }
+
+    #[test]
+    fn kinds_that_opt_out_are_served_from_cache_without_a_request() {
+        let mut app = app();
+        app.registry.register(FakeBilled);
+        app.list = ListView::new(Arc::new(FakeBilled), 9);
+        app.list.push_page(vec![row("svc", "EC2")], true);
+        app.remember_list();
+        press(&mut app, ":thing");
+        app.handle_key(key(KeyCode::Enter));
+        let effects = {
+            press(&mut app, ":billed");
+            app.handle_key(key(KeyCode::Enter))
+        };
+        assert_eq!(
+            effects,
+            [Effect::CancelLoads],
+            "no billed request on reopen"
+        );
+        assert_eq!(app.list.total(), 1);
+        // r still refreshes on request.
+        assert!(
+            press(&mut app, "r")
+                .iter()
+                .any(|e| matches!(e, Effect::LoadList { .. }))
+        );
+    }
+
+    #[test]
+    fn profiles_do_not_see_each_others_cache() {
+        let mut app = app(); // acme-dev has loaded the list
+        press(&mut app, "Pj"); // acme-qa
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.list.total(), 0);
+    }
+
+    #[test]
     fn child_kinds_are_not_in_the_palette() {
         let mut app = app();
         press(&mut app, ":part");
@@ -943,7 +1072,9 @@ pub(crate) mod tests {
                 }
             ]
         );
-        assert_eq!(app.list.total(), 0);
+        // The same kind again: its cached rows show while it reloads.
+        assert_eq!(app.list.total(), 2);
+        assert!(app.list.is_loading() && app.list.cached_at.is_some());
 
         press(&mut app, ":q");
         assert_eq!(app.handle_key(key(KeyCode::Enter)), [Effect::Quit]);
@@ -1001,6 +1132,46 @@ pub(crate) mod tests {
                 }
             ]
         );
+    }
+
+    /// A kind billed per request, like Cost Explorer.
+    struct FakeBilled;
+
+    #[async_trait::async_trait]
+    impl ResourceKind for FakeBilled {
+        fn id(&self) -> &'static str {
+            "fake:billed"
+        }
+        fn title(&self) -> &'static str {
+            "Billed"
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            &["billed"]
+        }
+        fn scope(&self) -> Scope {
+            Scope::Pinned("us-east-1")
+        }
+        fn columns(&self) -> &'static [fast_aws_core::Column] {
+            &[]
+        }
+        fn refresh_on_open(&self) -> bool {
+            false
+        }
+        async fn list(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: &fast_aws_core::ListQuery,
+        ) -> Result<Page, AwsError> {
+            Ok(Page::default())
+        }
+        async fn describe(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: Option<&Parent>,
+            _: &str,
+        ) -> Result<Detail, AwsError> {
+            unreachable!()
+        }
     }
 
     /// A global kind, like IAM.

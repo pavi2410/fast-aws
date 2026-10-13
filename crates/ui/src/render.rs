@@ -145,7 +145,22 @@ fn draw_list_title(frame: &mut Frame, area: Rect, app: &App) {
             Style::new().fg(Color::Yellow),
         ));
     }
-    let status = match &list.status {
+    let cached = list.cached_at.map(|at| {
+        let age = fast_aws_core::fmt::age(at.elapsed().as_secs() as i64, 0);
+        format!("cached {age} ago")
+    });
+    let status = match (&list.status, cached) {
+        (LoadStatus::Loading, Some(cached)) => {
+            Span::styled(format!("{cached} · refreshing… "), DIM)
+        }
+        (LoadStatus::Done, Some(cached)) => Span::styled(format!("{cached} · r refreshes "), DIM),
+        (status, _) => status_span(list, status),
+    };
+    draw_split(frame, area, Line::from(spans), Line::from(status));
+}
+
+fn status_span(list: &crate::list::ListView, status: &LoadStatus) -> Span<'static> {
+    match status {
         LoadStatus::Loading if list.total() == 0 => Span::styled("loading… ", DIM),
         LoadStatus::Loading => Span::styled(format!("loading… {} so far ", list.total()), DIM),
         LoadStatus::Done => Span::raw(""),
@@ -158,8 +173,7 @@ fn draw_list_title(frame: &mut Frame, area: Rect, app: &App) {
             Style::new().fg(Color::Red),
         ),
         LoadStatus::Failed(_) => Span::raw(""),
-    };
-    draw_split(frame, area, Line::from(spans), Line::from(status));
+    }
 }
 
 fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
@@ -520,7 +534,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
 mod tests {
     use super::*;
     use crate::app::Msg;
-    use crate::app::tests::app;
+    use crate::app::tests::{app, empty_app};
     use fast_aws_core::{CallerIdentity, Detail, Page};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -564,12 +578,7 @@ mod tests {
 
     #[test]
     fn sso_expired_pane() {
-        let mut app = app();
-        press(&mut app, KeyCode::Char(':'));
-        for c in "thing".chars() {
-            press(&mut app, KeyCode::Char(c));
-        }
-        press(&mut app, KeyCode::Enter);
+        let mut app = empty_app();
         app.handle_msg(Msg::Identity {
             generation: 1,
             result: Err(AwsError::new(
@@ -583,15 +592,10 @@ mod tests {
 
     #[test]
     fn access_denied_pane() {
-        let mut app = app();
+        let mut app = empty_app();
         ready(&mut app);
-        press(&mut app, KeyCode::Char(':'));
-        for c in "thing".chars() {
-            press(&mut app, KeyCode::Char(c));
-        }
-        press(&mut app, KeyCode::Enter);
         app.handle_msg(Msg::Page {
-            generation: 2,
+            generation: 1,
             result: Err(AwsError::new(
                 ErrorKind::AccessDenied,
                 Some("UnauthorizedOperation".into()),
