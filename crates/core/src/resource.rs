@@ -112,14 +112,51 @@ impl From<&str> for Cell {
     }
 }
 
+/// The resource a child list lives in: the bucket of an object list, the log group
+/// of a stream list.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Parent {
+    /// What the child kind needs to make its calls (a bucket name, `bucket/prefix/`,
+    /// a log group name, an API ID). Its format is private to the two kinds.
+    pub id: String,
+    /// Shown in the breadcrumb.
+    pub label: String,
+    /// The region the child calls must go to, when it isn't the current one
+    /// (S3 buckets live in one region each).
+    pub region: Option<String>,
+}
+
+/// Where `Enter` on a row leads: a list of `kind` inside `parent`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Drill {
+    pub kind: &'static str,
+    pub parent: Parent,
+}
+
 /// One line in a resource list: a stable ID plus one cell per column.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
     pub id: String,
     pub cells: Vec<Cell>,
+    /// Set when the row contains other resources; `Enter` opens them.
+    pub drill: Option<Drill>,
 }
 
 impl Row {
+    pub fn new(id: impl Into<String>, cells: Vec<Cell>) -> Self {
+        Self {
+            id: id.into(),
+            cells,
+            drill: None,
+        }
+    }
+
+    /// Makes `Enter` on this row open a list of `kind` inside `parent`.
+    pub fn drill(mut self, kind: &'static str, parent: Parent) -> Self {
+        self.drill = Some(Drill { kind, parent });
+        self
+    }
+
     /// Whether any cell contains `needle` (already lower-cased), for the `/` filter.
     pub fn matches(&self, needle: &str) -> bool {
         needle.is_empty()
@@ -135,7 +172,7 @@ impl Row {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ListQuery {
     /// The parent resource, for kinds that live inside another (objects in a bucket).
-    pub parent: Option<String>,
+    pub parent: Option<Parent>,
     /// The continuation token from the previous page.
     pub next: Option<String>,
 }
@@ -167,8 +204,19 @@ pub trait ResourceKind: Send + Sync {
     fn scope(&self) -> Scope;
     fn columns(&self) -> &'static [Column];
 
+    /// Whether the kind can be opened from the `:` palette. Kinds that only make
+    /// sense inside a parent (objects in a bucket) return `false`.
+    fn in_palette(&self) -> bool {
+        true
+    }
+
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> Result<Page, AwsError>;
-    async fn describe(&self, ctx: &Ctx, id: &str) -> Result<Detail, AwsError>;
+    async fn describe(
+        &self,
+        ctx: &Ctx,
+        parent: Option<&Parent>,
+        id: &str,
+    ) -> Result<Detail, AwsError>;
 }
 
 /// All resource kinds the binary was built with.
@@ -186,6 +234,16 @@ impl Registry {
         &self.kinds
     }
 
+    /// The kinds offered by the `:` palette.
+    pub fn palette(&self) -> impl Iterator<Item = &Arc<dyn ResourceKind>> {
+        self.kinds.iter().filter(|k| k.in_palette())
+    }
+
+    /// Looks a kind up by its ID, including kinds hidden from the palette.
+    pub fn get(&self, id: &str) -> Option<Arc<dyn ResourceKind>> {
+        self.kinds.iter().find(|k| k.id() == id).cloned()
+    }
+
     /// Resolves what was typed in the palette: an exact ID or alias first, then the
     /// first kind whose ID, alias or title starts with it.
     pub fn find(&self, typed: &str) -> Option<Arc<dyn ResourceKind>> {
@@ -198,11 +256,10 @@ impl Registry {
             names.extend(k.aliases().iter().map(|a| a.to_string()));
             names
         };
-        let exact = self.kinds.iter().find(|k| names(k).contains(&typed));
+        let exact = self.palette().find(|k| names(k).contains(&typed));
         exact
             .or_else(|| {
-                self.kinds
-                    .iter()
+                self.palette()
                     .find(|k| names(k).iter().any(|n| n.starts_with(&typed)))
             })
             .cloned()
@@ -213,7 +270,7 @@ impl Registry {
 mod tests {
     use super::*;
 
-    struct Fake(&'static str, &'static str, &'static [&'static str]);
+    struct Fake(&'static str, &'static str, &'static [&'static str], bool);
 
     #[async_trait]
     impl ResourceKind for Fake {
@@ -232,10 +289,13 @@ mod tests {
         fn columns(&self) -> &'static [Column] {
             &[]
         }
+        fn in_palette(&self) -> bool {
+            self.3
+        }
         async fn list(&self, _: &Ctx, _: &ListQuery) -> Result<Page, AwsError> {
             Ok(Page::default())
         }
-        async fn describe(&self, _: &Ctx, _: &str) -> Result<Detail, AwsError> {
+        async fn describe(&self, _: &Ctx, _: Option<&Parent>, _: &str) -> Result<Detail, AwsError> {
             unreachable!()
         }
     }
@@ -246,8 +306,9 @@ mod tests {
             "ec2:instance",
             "EC2 Instances",
             &["ec2", "i", "instances"],
+            true,
         ));
-        r.register(Fake("ec2:sg", "Security Groups", &["sg"]));
+        r.register(Fake("ec2:sg", "Security Groups", &["sg"], true));
         r
     }
 
@@ -257,6 +318,16 @@ mod tests {
         assert_eq!(r.find(":ec2").unwrap().id(), "ec2:instance");
         assert_eq!(r.find("sg").unwrap().id(), "ec2:sg");
         assert_eq!(r.find("ec2:sg").unwrap().id(), "ec2:sg");
+    }
+
+    #[test]
+    fn child_kinds_are_hidden_from_the_palette_but_can_be_looked_up() {
+        let mut r = registry();
+        r.register(Fake("s3:object", "Objects", &["objects"], false));
+        assert!(r.find("objects").is_none());
+        assert!(r.find("s3:object").is_none());
+        assert_eq!(r.get("s3:object").unwrap().title(), "Objects");
+        assert_eq!(r.palette().count(), 2);
     }
 
     #[test]
@@ -278,10 +349,7 @@ mod tests {
 
     #[test]
     fn row_filter_is_case_insensitive_over_id_and_cells() {
-        let row = Row {
-            id: "i-0abc".into(),
-            cells: vec!["Web-1".into(), "running".into()],
-        };
+        let row = Row::new("i-0abc", vec!["Web-1".into(), "running".into()]);
         assert!(row.matches("web"));
         assert!(row.matches("i-0a"));
         assert!(row.matches(""));

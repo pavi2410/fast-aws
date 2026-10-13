@@ -114,7 +114,7 @@ fn draw_list_title(frame: &mut Frame, area: Rect, app: &App) {
     };
     let mut spans = vec![
         Span::styled(
-            format!(" {} ", list.kind.title()),
+            format!(" {} ", app.breadcrumb().join(" › ")),
             Style::new().fg(ACCENT).bold(),
         ),
         Span::raw(count),
@@ -316,10 +316,19 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         (_, Some(flash)) => Line::styled(format!(" {flash}"), Style::new().fg(Color::Yellow)),
         _ if app.login_would_help() => hints(&[("L", "log in"), ("P", "profile"), ("q", "quit")]),
         _ => match app.screen {
+            Screen::List if !app.back.is_empty() => hints(&[
+                ("enter", "open"),
+                ("d", "describe"),
+                ("/", "filter"),
+                ("r", "refresh"),
+                ("esc", "back"),
+                (":", "jump"),
+            ]),
             Screen::List => hints(&[
                 (":", "jump"),
                 ("/", "filter"),
-                ("enter", "describe"),
+                ("enter", "open"),
+                ("d", "describe"),
                 ("r", "refresh"),
                 ("P", "profile"),
                 ("R", "region"),
@@ -438,12 +447,13 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         (":", "jump to a resource type (:q quits)"),
         ("/", "filter the list"),
         ("j/k ↑/↓", "move · PgUp/PgDn · Home/End"),
-        ("enter / d", "describe the selected item"),
+        ("enter", "open: drill in, or describe"),
+        ("d", "describe the selected item"),
         ("tab", "fields / raw (in describe)"),
         ("r", "refresh"),
         ("P / R", "switch profile / region"),
         ("L", "SSO login for this profile"),
-        ("esc / q", "back · q quits from the list"),
+        ("esc / q", "back · q quits at the top level"),
         ("ctrl-c", "quit"),
     ];
     let lines: Vec<Line> = KEYS
@@ -549,7 +559,7 @@ mod tests {
     fn detail_view() {
         let mut app = app();
         ready(&mut app);
-        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('d'));
         app.handle_msg(Msg::Detail {
             generation: 2,
             result: Ok(Detail {
@@ -570,6 +580,24 @@ mod tests {
         let mut app = app();
         ready(&mut app);
         press(&mut app, KeyCode::Char('P'));
+        insta::assert_snapshot!(render(&app));
+    }
+
+    #[test]
+    fn drilled_in_list_shows_a_breadcrumb() {
+        let mut app = app();
+        ready(&mut app);
+        press(&mut app, KeyCode::Enter);
+        app.handle_msg(Msg::Page {
+            generation: 2,
+            result: Ok(Page {
+                rows: vec![fast_aws_core::Row::new(
+                    "p1",
+                    vec!["bolt".into(), "p1".into()],
+                )],
+                next: None,
+            }),
+        });
         insta::assert_snapshot!(render(&app));
     }
 

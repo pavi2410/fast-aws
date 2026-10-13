@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use fast_aws_core::{ConfigFactory, Ctx, ListQuery, ResourceKind, Scope, caller_identity};
+use fast_aws_core::{ConfigFactory, Ctx, ListQuery, Parent, ResourceKind, Scope, caller_identity};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use ratatui::crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 use ratatui::crossterm::{ExecutableCommand, cursor};
@@ -55,23 +55,15 @@ pub async fn run(
                     }
                 }
                 Effect::LoadList { generation } => {
-                    let (factory, kind) = (factory.clone(), app.list.kind.clone());
-                    let (profile, region) = (app.profile.clone(), app.region.clone());
-                    loads.spawn(load_list(
-                        factory,
-                        profile,
-                        region,
-                        kind,
-                        generation,
-                        tx.clone(),
-                    ));
+                    let target = Target::of(&app, &factory);
+                    loads.spawn(load_list(target, generation, tx.clone()));
                 }
                 Effect::LoadDetail { generation, id } => {
-                    let (factory, kind, tx) = (factory.clone(), app.list.kind.clone(), tx.clone());
-                    let (profile, region) = (app.profile.clone(), app.region.clone());
+                    let (target, tx) = (Target::of(&app, &factory), tx.clone());
                     loads.spawn(async move {
-                        let ctx = factory.ctx(&profile, &region).await;
-                        let result = kind.describe(&scoped(&ctx, kind.scope()), &id).await;
+                        let ctx = target.ctx().await;
+                        let parent = target.parent.as_ref();
+                        let result = target.kind.describe(&ctx, parent, &id).await;
                         let _ = tx.send(Input::Msg(Msg::Detail { generation, result }));
                     });
                 }
@@ -109,29 +101,50 @@ pub async fn run(
     Ok(())
 }
 
-/// The context a kind's calls run in: global and pinned services ignore the
-/// current region.
-fn scoped(ctx: &Ctx, scope: Scope) -> Ctx {
-    match scope {
-        Scope::Regional => ctx.clone(),
-        Scope::Global => ctx.in_region("us-east-1"),
-        Scope::Pinned(region) => ctx.in_region(region),
-    }
-}
-
-/// Streams every page of a list to the app, stopping at the first error.
-async fn load_list(
+/// What a list or detail load runs against: the current list's kind and parent,
+/// in the app's profile and region.
+struct Target {
     factory: Arc<ConfigFactory>,
     profile: String,
     region: String,
     kind: Arc<dyn ResourceKind>,
-    generation: u64,
-    tx: UnboundedSender<Input>,
-) {
-    let ctx = scoped(&factory.ctx(&profile, &region).await, kind.scope());
-    let mut query = ListQuery::default();
+    parent: Option<Parent>,
+}
+
+impl Target {
+    fn of(app: &App, factory: &Arc<ConfigFactory>) -> Self {
+        Self {
+            factory: factory.clone(),
+            profile: app.profile.clone(),
+            region: app.region.clone(),
+            kind: app.list.kind.clone(),
+            parent: app.list.parent.clone(),
+        }
+    }
+
+    /// The context the kind's calls run in. Global and pinned services ignore the
+    /// current region, and a parent can name its own (an S3 bucket's region).
+    async fn ctx(&self) -> Ctx {
+        let ctx = self.factory.ctx(&self.profile, &self.region).await;
+        let parent_region = self.parent.as_ref().and_then(|p| p.region.as_deref());
+        match (self.kind.scope(), parent_region) {
+            (Scope::Global, _) => ctx.in_region("us-east-1"),
+            (Scope::Pinned(region), _) => ctx.in_region(region),
+            (Scope::Regional, Some(region)) => ctx.in_region(region),
+            (Scope::Regional, None) => ctx,
+        }
+    }
+}
+
+/// Streams every page of a list to the app, stopping at the first error.
+async fn load_list(target: Target, generation: u64, tx: UnboundedSender<Input>) {
+    let ctx = target.ctx().await;
+    let mut query = ListQuery {
+        parent: target.parent.clone(),
+        next: None,
+    };
     loop {
-        let result = kind.list(&ctx, &query).await;
+        let result = target.kind.list(&ctx, &query).await;
         let next = result.as_ref().ok().and_then(|p| p.next.clone());
         if tx
             .send(Input::Msg(Msg::Page { generation, result }))

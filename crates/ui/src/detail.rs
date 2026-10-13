@@ -11,7 +11,8 @@ pub enum DetailState {
 }
 
 pub struct DetailView {
-    pub title: &'static str,
+    /// The breadcrumb of the list it was opened from.
+    pub title: String,
     pub id: String,
     pub generation: u64,
     pub state: DetailState,
@@ -21,9 +22,9 @@ pub struct DetailView {
 }
 
 impl DetailView {
-    pub fn new(title: &'static str, id: String, generation: u64) -> Self {
+    pub fn new(title: impl Into<String>, id: String, generation: u64) -> Self {
         Self {
-            title,
+            title: title.into(),
             id,
             generation,
             state: DetailState::Loading,

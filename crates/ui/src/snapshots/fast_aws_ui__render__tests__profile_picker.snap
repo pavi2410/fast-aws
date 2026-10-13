@@ -13,4 +13,4 @@ expression: render(&app)
 "          │  ci                                      │          "
 "          ╰──────────────────────────────────────────╯          "
 "                                                                "
-" : jump  / filter  enter describe  r refresh  P profile  R regio"
+" : jump  / filter  enter open  d describe  r refresh  P profile "

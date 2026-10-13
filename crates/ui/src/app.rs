@@ -120,7 +120,10 @@ pub struct App {
     pub profile: String,
     pub region: String,
     pub identity: IdentityState,
+    /// The list on screen.
     pub list: ListView,
+    /// Lists drilled out of, outermost first; `Esc` returns to the last one.
+    pub back: Vec<ListView>,
     pub screen: Screen,
     pub overlay: Overlay,
     /// A one-line message in the footer, cleared by the next key.
@@ -147,6 +150,7 @@ impl App {
             region,
             identity: IdentityState::Loading,
             list: ListView::new(kind, 1),
+            back: Vec::new(),
             screen: Screen::List,
             overlay: Overlay::None,
             flash: None,
@@ -318,8 +322,12 @@ impl App {
                 self.list.reload(generation);
                 return vec![Effect::CancelLoads, Effect::LoadList { generation }];
             }
-            KeyCode::Enter | KeyCode::Char('d') => return self.open_detail(),
+            KeyCode::Enter => return self.open_selected(),
+            KeyCode::Char('d') => return self.open_detail(),
             KeyCode::Esc if !self.list.filter.is_empty() => self.list.set_filter(""),
+            KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('q') if !self.back.is_empty() => {
+                return self.go_back();
+            }
             KeyCode::Char('q') => {
                 self.should_quit = true;
                 return vec![Effect::Quit];
@@ -329,13 +337,51 @@ impl App {
         Vec::new()
     }
 
+    /// `Enter`: drills into the row if it contains other resources, else describes it.
+    fn open_selected(&mut self) -> Vec<Effect> {
+        let Some(drill) = self.list.selected_row().and_then(|r| r.drill.clone()) else {
+            return self.open_detail();
+        };
+        let Some(kind) = self.registry.get(drill.kind) else {
+            self.flash = Some(format!("{} isn't available in this build", drill.kind));
+            return Vec::new();
+        };
+        let generation = self.generation();
+        let child = ListView::inside(kind, Some(drill.parent), generation);
+        self.back.push(std::mem::replace(&mut self.list, child));
+        vec![Effect::CancelLoads, Effect::LoadList { generation }]
+    }
+
+    /// Returns to the list drilled out of. It's reloaded if its load was cut short.
+    fn go_back(&mut self) -> Vec<Effect> {
+        let Some(previous) = self.back.pop() else {
+            return Vec::new();
+        };
+        self.list = previous;
+        let mut effects = vec![Effect::CancelLoads];
+        if self.list.is_loading() {
+            let generation = self.generation();
+            self.list.reload(generation);
+            effects.push(Effect::LoadList { generation });
+        }
+        effects
+    }
+
+    /// Where the current list sits: the root kind's title, then each parent.
+    pub fn breadcrumb(&self) -> Vec<&str> {
+        let lists = self.back.iter().chain(std::iter::once(&self.list));
+        let mut crumbs = vec![self.back.first().unwrap_or(&self.list).kind.title()];
+        crumbs.extend(lists.filter_map(|l| l.parent.as_ref().map(|p| p.label.as_str())));
+        crumbs
+    }
+
     fn open_detail(&mut self) -> Vec<Effect> {
         let Some(id) = self.list.selected_row().map(|r| r.id.clone()) else {
             return Vec::new();
         };
         let generation = self.generation();
         self.screen = Screen::Detail(DetailView::new(
-            self.list.kind.title(),
+            self.breadcrumb().join(" › "),
             id.clone(),
             generation,
         ));
@@ -409,6 +455,7 @@ impl App {
         };
         let generation = self.generation();
         self.list = ListView::new(kind, generation);
+        self.back.clear();
         self.screen = Screen::List;
         vec![Effect::CancelLoads, Effect::LoadList { generation }]
     }
@@ -488,10 +535,13 @@ impl App {
         Vec::new()
     }
 
-    /// Starts over in the current profile and region: back to the list, reloaded.
+    /// Starts over in the current profile and region: back to the top-level list
+    /// (drilled-into parents may not exist there), reloaded.
     fn reload_context(&mut self, identity_too: bool) -> Vec<Effect> {
         let generation = self.generation();
-        self.list = ListView::new(self.list.kind.clone(), generation);
+        let root = self.back.first().unwrap_or(&self.list).kind.clone();
+        self.list = ListView::new(root, generation);
+        self.back.clear();
         self.screen = Screen::List;
         let mut effects = vec![Effect::CancelLoads];
         if identity_too {
@@ -533,7 +583,8 @@ impl App {
 pub(crate) mod tests {
     use super::*;
     use crate::list::LoadStatus;
-    use crate::list::tests::{FakeKind, row};
+    use crate::list::tests::{FakeChild, FakeKind, row};
+    use fast_aws_core::Parent;
     use fast_aws_core::profiles::Auth;
 
     pub(crate) fn catalog() -> ProfileCatalog {
@@ -559,6 +610,7 @@ pub(crate) mod tests {
     pub(crate) fn app() -> App {
         let mut registry = Registry::default();
         registry.register(FakeKind);
+        registry.register(FakeChild);
         let kind = registry.find("thing").unwrap();
         let (mut app, effects) = App::new(
             registry,
@@ -577,11 +629,22 @@ pub(crate) mod tests {
         app.handle_msg(Msg::Page {
             generation: 1,
             result: Ok(Page {
-                rows: vec![row("a", "web-1"), row("b", "db")],
+                rows: vec![
+                    row("a", "web-1").drill("fake:part", part_parent()),
+                    row("b", "db"),
+                ],
                 next: None,
             }),
         });
         app
+    }
+
+    fn part_parent() -> Parent {
+        Parent {
+            id: "a".into(),
+            label: "web-1".into(),
+            region: Some("us-west-2".into()),
+        }
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -629,6 +692,71 @@ pub(crate) mod tests {
         app.handle_key(key(KeyCode::Esc));
         assert!(matches!(app.screen, Screen::List));
         assert_eq!(app.list.selected_row().unwrap().id, "b");
+    }
+
+    #[test]
+    fn enter_drills_into_rows_with_children_and_esc_comes_back() {
+        let mut app = app();
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert_eq!(
+            effects,
+            [Effect::CancelLoads, Effect::LoadList { generation: 2 }]
+        );
+        assert_eq!(app.list.kind.id(), "fake:part");
+        assert_eq!(app.list.parent, Some(part_parent()));
+        assert_eq!(app.breadcrumb(), ["Things", "web-1"]);
+
+        // The parent list had finished loading, so going back needs no reload.
+        assert_eq!(app.handle_key(key(KeyCode::Esc)), [Effect::CancelLoads]);
+        assert_eq!(app.list.kind.id(), "fake:thing");
+        assert_eq!(app.list.selected_row().unwrap().id, "a");
+        assert_eq!(app.breadcrumb(), ["Things"]);
+    }
+
+    #[test]
+    fn going_back_reloads_a_parent_whose_load_was_cut_short() {
+        let mut app = app();
+        press(&mut app, "r"); // generation 2, still loading
+        app.handle_key(key(KeyCode::Enter)); // generation 3
+        let effects = press(&mut app, "q");
+        assert_eq!(
+            effects,
+            [Effect::CancelLoads, Effect::LoadList { generation: 4 }]
+        );
+        assert_eq!(app.list.kind.id(), "fake:thing");
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn d_describes_even_a_row_with_children() {
+        let mut app = app();
+        let effects = press(&mut app, "d");
+        assert_eq!(
+            effects,
+            [Effect::LoadDetail {
+                generation: 2,
+                id: "a".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn switching_region_inside_a_child_returns_to_the_top_level_list() {
+        let mut app = app();
+        app.handle_key(key(KeyCode::Enter));
+        press(&mut app, "Rj");
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.list.kind.id(), "fake:thing");
+        assert!(app.back.is_empty());
+        assert_eq!(app.list.parent, None);
+    }
+
+    #[test]
+    fn child_kinds_are_not_in_the_palette() {
+        let mut app = app();
+        press(&mut app, ":part");
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.flash.as_deref(), Some("unknown resource type: part"));
     }
 
     #[test]

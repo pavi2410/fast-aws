@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use fast_aws_core::{AwsError, ResourceKind, Row};
+use fast_aws_core::{AwsError, Parent, ResourceKind, Row};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoadStatus {
@@ -15,6 +15,8 @@ pub enum LoadStatus {
 
 pub struct ListView {
     pub kind: Arc<dyn ResourceKind>,
+    /// What this list is inside of, for drilled-into lists (objects in a bucket).
+    pub parent: Option<Parent>,
     /// Identifies the load in flight; pages from older loads are ignored.
     pub generation: u64,
     pub status: LoadStatus,
@@ -30,8 +32,13 @@ pub struct ListView {
 
 impl ListView {
     pub fn new(kind: Arc<dyn ResourceKind>, generation: u64) -> Self {
+        Self::inside(kind, None, generation)
+    }
+
+    pub fn inside(kind: Arc<dyn ResourceKind>, parent: Option<Parent>, generation: u64) -> Self {
         Self {
             kind,
+            parent,
             generation,
             status: LoadStatus::Loading,
             filter: String::new(),
@@ -127,6 +134,38 @@ pub(crate) mod tests {
 
     pub(crate) struct FakeKind;
 
+    /// A kind that only exists inside a [`FakeKind`] row.
+    pub(crate) struct FakeChild;
+
+    #[async_trait]
+    impl ResourceKind for FakeChild {
+        fn id(&self) -> &'static str {
+            "fake:part"
+        }
+        fn title(&self) -> &'static str {
+            "Parts"
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            &["part"]
+        }
+        fn scope(&self) -> Scope {
+            Scope::Regional
+        }
+        fn columns(&self) -> &'static [Column] {
+            const COLUMNS: &[Column] = &[Column::fill("NAME", 1), Column::fixed("ID", 6)];
+            COLUMNS
+        }
+        fn in_palette(&self) -> bool {
+            false
+        }
+        async fn list(&self, _: &Ctx, _: &ListQuery) -> Result<Page, AwsError> {
+            Ok(Page::default())
+        }
+        async fn describe(&self, _: &Ctx, _: Option<&Parent>, _: &str) -> Result<Detail, AwsError> {
+            unreachable!()
+        }
+    }
+
     #[async_trait]
     impl ResourceKind for FakeKind {
         fn id(&self) -> &'static str {
@@ -148,16 +187,13 @@ pub(crate) mod tests {
         async fn list(&self, _: &Ctx, _: &ListQuery) -> Result<Page, AwsError> {
             Ok(Page::default())
         }
-        async fn describe(&self, _: &Ctx, _: &str) -> Result<Detail, AwsError> {
+        async fn describe(&self, _: &Ctx, _: Option<&Parent>, _: &str) -> Result<Detail, AwsError> {
             unreachable!()
         }
     }
 
     pub(crate) fn row(id: &str, name: &str) -> Row {
-        Row {
-            id: id.into(),
-            cells: vec![name.into(), id.into()],
-        }
+        Row::new(id, vec![name.into(), id.into()])
     }
 
     fn view() -> ListView {

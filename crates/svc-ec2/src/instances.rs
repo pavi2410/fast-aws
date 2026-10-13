@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use aws_sdk_ec2::Client;
 use aws_sdk_ec2::types::{Filter, Instance, InstanceStateName, Tag};
 use fast_aws_core::{
-    AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, ResourceKind, Row, Scope, Tone,
+    AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
 };
 use serde_json::{Value, json};
 
@@ -51,7 +51,7 @@ impl ResourceKind for Instances {
         list(&Client::new(ctx.config()), query).await
     }
 
-    async fn describe(&self, ctx: &Ctx, id: &str) -> Result<Detail, AwsError> {
+    async fn describe(&self, ctx: &Ctx, _: Option<&Parent>, id: &str) -> Result<Detail, AwsError> {
         describe(&Client::new(ctx.config()), id).await
     }
 }
@@ -110,9 +110,9 @@ async fn describe(client: &Client, id: &str) -> Result<Detail, AwsError> {
 
 fn row(i: &Instance, now: i64) -> Row {
     let state = i.state().and_then(|s| s.name());
-    Row {
-        id: i.instance_id().unwrap_or_default().to_owned(),
-        cells: vec![
+    Row::new(
+        i.instance_id().unwrap_or_default(),
+        vec![
             name(i.tags()).unwrap_or("-").into(),
             i.instance_id().unwrap_or_default().into(),
             state_cell(state),
@@ -128,7 +128,7 @@ fn row(i: &Instance, now: i64) -> Row {
                 .unwrap_or_else(|| "-".into())
                 .into(),
         ],
-    }
+    )
 }
 
 fn state_cell(state: Option<&InstanceStateName>) -> Cell {
