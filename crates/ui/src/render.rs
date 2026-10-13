@@ -64,6 +64,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Overlay::Regions(at) => draw_regions(frame, body, app, *at),
         Overlay::Relations(at) => draw_relations(frame, body, app, *at),
         Overlay::Help => draw_help(frame, body),
+        Overlay::Settings(at) => draw_settings(frame, body, app, *at),
     }
 }
 
@@ -623,6 +624,31 @@ fn draw_regions(frame: &mut Frame, area: Rect, app: &App, at: usize) {
     );
 }
 
+fn draw_settings(frame: &mut Frame, area: Rect, app: &App, at: usize) {
+    let lines: Vec<Line> = crate::app::SETTINGS
+        .iter()
+        .enumerate()
+        .map(|(i, (setting, label))| {
+            picker_line(
+                format!("{label:<36}{}", app.setting_value(*setting)),
+                i == at,
+            )
+        })
+        .collect();
+    let inner = popup(
+        frame,
+        area,
+        56,
+        lines.len() as u16 + 3,
+        "settings · enter changes · esc closes",
+    );
+    let note = Line::styled("  for this session; set them for good in config.toml", DIM);
+    frame.render_widget(
+        Paragraph::new(lines.into_iter().chain([note]).collect::<Vec<_>>()),
+        inner,
+    );
+}
+
 fn draw_help(frame: &mut Frame, area: Rect) {
     const KEYS: &[(&str, &str)] = &[
         (":", "jump to a resource type (:q quits)"),
@@ -636,6 +662,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         ("n", "load more (lists stop after 5 pages)"),
         ("P / R", "switch profile / region"),
         ("Z", "times in local time / UTC"),
+        (",", "settings: borders, sparklines, times"),
         ("L", "SSO login for this profile"),
         (":unlock", "allow actions on a prod profile (this session)"),
         ("esc / q", "back · q quits at the top level"),
@@ -882,6 +909,16 @@ mod tests {
             )])),
         });
         insta::assert_snapshot!(render(&app));
+    }
+
+    #[test]
+    fn settings_panel() {
+        let mut app = app();
+        ready(&mut app);
+        press(&mut app, KeyCode::Char(','));
+        let mut terminal = Terminal::new(TestBackend::new(70, 12)).unwrap();
+        terminal.draw(|f| draw(f, &app)).unwrap();
+        insta::assert_snapshot!(terminal.backend().to_string());
     }
 
     #[test]

@@ -46,6 +46,23 @@ pub const REGIONS: &[&str] = &[
 
 const PAGE_JUMP: isize = 20;
 
+/// A display setting that can be changed while running (`,`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Setting {
+    Borders,
+    Sparkline,
+    Times,
+    Metrics,
+}
+
+/// The settings panel, in order, with their labels.
+pub const SETTINGS: [(Setting, &str); 4] = [
+    (Setting::Borders, "borders"),
+    (Setting::Sparkline, "sparkline style"),
+    (Setting::Times, "times"),
+    (Setting::Metrics, "sparklines (GetMetricData, billed)"),
+];
+
 /// Rows around the cursor whose sparklines are fetched together.
 const SPARK_BATCH: usize = 60;
 /// How long fetched sparklines are reused before they're fetched again.
@@ -158,6 +175,8 @@ pub enum Overlay {
     /// A row's question being answered, with what has been typed.
     Prompt(Query, String),
     Help,
+    /// `,`: index into [`SETTINGS`].
+    Settings(usize),
 }
 
 /// A line in the profile picker: an sso-session heading or a profile.
@@ -254,6 +273,76 @@ impl App {
         self.config = config;
         self.read_only_flag = read_only_flag;
         self.guard = Guard::new(&self.config, &self.profile, read_only_flag);
+    }
+
+    /// The value each setting in [`SETTINGS`] shows right now.
+    pub fn setting_value(&self, setting: Setting) -> &'static str {
+        use fast_aws_core::metrics::SparkStyle;
+        match setting {
+            Setting::Borders => {
+                if self.display.borders {
+                    "on"
+                } else {
+                    "off"
+                }
+            }
+            Setting::Sparkline => match self.display.sparkline {
+                SparkStyle::Dots => "dots",
+                SparkStyle::Bars => "bars",
+            },
+            Setting::Times => {
+                if self.display.utc {
+                    "UTC"
+                } else {
+                    "local"
+                }
+            }
+            Setting::Metrics => {
+                if self.metrics_enabled {
+                    "on (billed)"
+                } else {
+                    "off"
+                }
+            }
+        }
+    }
+
+    /// Changes one setting for this session.
+    fn toggle(&mut self, setting: Setting) {
+        use fast_aws_core::metrics::SparkStyle;
+        match setting {
+            Setting::Borders => self.display.borders = !self.display.borders,
+            Setting::Sparkline => {
+                self.display.sparkline = match self.display.sparkline {
+                    SparkStyle::Dots => SparkStyle::Bars,
+                    SparkStyle::Bars => SparkStyle::Dots,
+                }
+            }
+            Setting::Times => self.display.utc = !self.display.utc,
+            Setting::Metrics => {
+                self.metrics_enabled = !self.metrics_enabled;
+                if self.metrics_enabled {
+                    self.flash = Some("sparklines on: GetMetricData is billed per metric".into());
+                }
+            }
+        }
+    }
+
+    fn settings_key(&mut self, key: KeyEvent, at: usize) -> Vec<Effect> {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char(',') => self.overlay = Overlay::None,
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.overlay = Overlay::Settings((at + 1).min(SETTINGS.len() - 1));
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.overlay = Overlay::Settings(at.saturating_sub(1))
+            }
+            KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right => {
+                self.toggle(SETTINGS[at].0);
+            }
+            _ => {}
+        }
+        Vec::new()
     }
 
     fn generation(&mut self) -> u64 {
@@ -462,6 +551,7 @@ impl App {
                 self.overlay = Overlay::None;
                 Vec::new()
             }
+            Overlay::Settings(at) => self.settings_key(key, at),
             Overlay::None => match self.screen {
                 Screen::List => self.list_key(key),
                 Screen::Detail(_) => self.detail_key(key),
@@ -478,6 +568,10 @@ impl App {
             }
             KeyCode::Char('?') => {
                 self.overlay = Overlay::Help;
+                Vec::new()
+            }
+            KeyCode::Char(',') => {
+                self.overlay = Overlay::Settings(0);
                 Vec::new()
             }
             KeyCode::Char('P') => {
@@ -1687,6 +1781,46 @@ pub(crate) mod tests {
         let mut app = super::tests::app();
         app.set_safety(toml::from_str("timezone = \"utc\"").unwrap(), false);
         assert!(app.display.utc);
+    }
+
+    #[test]
+    fn settings_change_at_runtime() {
+        use fast_aws_core::metrics::SparkStyle;
+        let mut app = app();
+        press(&mut app, ",");
+        assert_eq!(app.overlay, Overlay::Settings(0));
+        app.handle_key(key(KeyCode::Enter)); // borders
+        assert!(app.display.borders);
+        press(&mut app, "j ");
+        assert_eq!(app.display.sparkline, SparkStyle::Bars);
+        press(&mut app, "j ");
+        assert!(!app.display.utc, "the fixture is UTC; toggled to local");
+        press(&mut app, "j");
+        assert_eq!(app.setting_value(Setting::Metrics), "off");
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.setting_value(Setting::Metrics), "on (billed)");
+        assert!(app.flash.as_deref().unwrap().contains("billed"));
+        // Rows without metrics: nothing to fetch.
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, Effect::LoadMetrics { .. }))
+        );
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn turning_sparklines_on_fetches_them() {
+        let (mut app, effects) = app_with_metrics(false);
+        assert!(effects.is_empty());
+        press(&mut app, ",jjj");
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::LoadMetrics { .. }))
+        );
     }
 
     #[test]

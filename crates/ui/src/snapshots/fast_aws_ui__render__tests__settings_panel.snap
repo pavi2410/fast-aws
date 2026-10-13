@@ -1,0 +1,16 @@
+---
+source: crates/ui/src/render.rs
+expression: terminal.backend().to_string()
+---
+" fast-aws  acme-dev (sso acme) │ 123456789012 │ eu-west-  UTC  ? help "
+" Things (2)                                                           "
+" NAME                                                           ID    "
+"▸web-1 ╭ settings · enter changes · esc closes ───────────────╮ a     "
+" db    │▸ borders                             off             │ b     "
+"       │  sparkline style                     dots            │       "
+"       │  times                               UTC             │       "
+"       │  sparklines (GetMetricData, billed)  off             │       "
+"       │  for this session; set them for good in config.toml  │       "
+"       ╰──────────────────────────────────────────────────────╯       "
+"                                                                      "
+" : jump  / filter  enter open  d describe  g go to  r refresh  P profi"
