@@ -11,6 +11,16 @@ license = "MIT OR Apache-2.0"
 fast-aws-core = { path = "crates/core" }
 fast-aws-ui = { path = "crates/ui" }
 
+async-trait = "0.1"
+aws-config = { version = "1.12", features = ["behavior-version-latest"] }
+aws-sdk-sts = "1.119"
+aws-smithy-runtime-api = { version = "1.19", features = ["client"] }
+aws-smithy-types = "1.8"
+aws-types = "1.3"
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time"] }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
