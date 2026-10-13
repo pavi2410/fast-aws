@@ -63,6 +63,7 @@ fn registry() -> Registry {
     fast_aws_svc_dynamodb::register(&mut registry);
     fast_aws_svc_rds::register(&mut registry);
     fast_aws_svc_ssm::register(&mut registry);
+    fast_aws_svc_secrets::register(&mut registry);
     registry
 }
 
