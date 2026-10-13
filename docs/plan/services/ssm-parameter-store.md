@@ -80,7 +80,7 @@
   about 2, adaptive retry, and cache tree levels aggressively.
 - `PutParameter` with `Overwrite=true`: always send the original `Type`, `Tier` and
   `KeyId`. If `KeyId` is left out for a SecureString, it may be re-encrypted with the
-  default `aws/ssm` key. Check this behaviour in the spike.
+  default `aws/ssm` key ([spike 7](../00-foundation.md#spikes-to-run-before-building-on-assumptions)).
 - `GetParameterHistory` on a SecureString returns values *decrypted* if asked. Pass
   `WithDecryption=false` unless the user is revealing.
 - Advanced-tier parameters and policies (expiration) cost money. Show the tier, and

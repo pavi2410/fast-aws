@@ -198,9 +198,16 @@ region = "eu-west-1"
 
 ## Spikes to run before building on assumptions
 
-1. Serde for SDK types (see above).
-2. `cloudwatchlogs::start_live_tail` event-stream handling. The client method exists;
-   confirm how its event receiver behaves in a tokio task.
-3. MFA prompting in `aws-config`.
-4. The `aws-sdk-rds` `auth_token` module (it exists) for IAM DB auth tokens.
-5. Cold build time of the full workspace, and of a single-service rebuild.
+This is the single list of open technical questions. [Phasing](phasing.md) Phase 0
+works through it, and service docs link here instead of keeping their own lists.
+
+| # | Question | Raised in | Fallback if it fails |
+|---|---|---|---|
+| 1 | Is the unstable `serde-serialize` feature usable for SDK types? | [above](#gotcha-sdk-types-dont-implement-serialize) | hand-written `Detail` mappings + `Debug` |
+| 2 | How does the `start_live_tail` event receiver behave in a tokio task? (The client method exists.) | [Logs](services/cloudwatch-logs.md) | poll `FilterLogEvents` |
+| 3 | Can `aws-config` prompt for MFA (`mfa_serial`)? | [above](#client-factory-and-credentials) | custom credentials provider with a TUI prompt |
+| 4 | Does the `aws-sdk-rds` `auth_token` module (it exists) generate usable IAM DB tokens? | [RDS](services/rds.md) | managed secret or password prompt only |
+| 5 | Can the TUI suspend and resume cleanly around a child process (`$EDITOR`, `ssh`, `session-manager-plugin`, `psql`)? | [EC2](services/ec2.md#gotchas) | — (needed; must work) |
+| 6 | Is `aws-sdk-s3-transfer-manager` (0.x) ready for multipart upload/download? | [S3](services/s3.md#gotchas) | small hand-written multipart helper |
+| 7 | With `PutParameter` `Overwrite=true`, does leaving out `KeyId` re-encrypt a SecureString with `aws/ssm`? | [SSM](services/ssm-parameter-store.md#gotchas) | always send `KeyId` (planned anyway) |
+| 8 | Cold build time of the full workspace, and of a single-service rebuild | [above](#workspace-layout-to-keep-build-times-manageable) | fewer default features, faster linker |

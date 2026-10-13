@@ -7,13 +7,10 @@ confirmations) has been used for a while.
 
 ## Phase 0: Spikes (time-boxed, about 2 days)
 
-These resolve the open questions in [foundation § spikes](00-foundation.md#spikes-to-run-before-building-on-assumptions):
-
-- [ ] Serde for SDK types (unstable `serde-serialize`), or decide on hand-written `Detail` mappings
-- [ ] `StartLiveTail` event stream inside tokio, plus the `FilterLogEvents` polling fallback
-- [ ] MFA prompt support in `aws-config`
-- [ ] Cold and incremental build times with the workspace layout
-- [ ] Suspend/resume of the TUI around a child process (`$EDITOR`, `ssh`, `session-manager-plugin`)
+Work through every item in the
+[foundation spike list](00-foundation.md#spikes-to-run-before-building-on-assumptions).
+That table is the only copy of the list. Items 1, 2, 5 and 8 block Phase 1; the rest
+can be done just before the phase that needs them.
 
 **Exit:** a short decision note added to `00-foundation.md` for each spike.
 
