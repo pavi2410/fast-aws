@@ -65,7 +65,15 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     let account = match &app.identity {
         IdentityState::Loading => Span::styled("checking credentials…", DIM),
         IdentityState::Ready(id) => Span::raw(id.account.clone()),
-        IdentityState::Failed(_) => Span::styled("⚠ credentials", Style::new().fg(Color::Red)),
+        IdentityState::Failed(e) => {
+            let what = match e.kind {
+                ErrorKind::SsoExpired => "⚠ SSO expired",
+                ErrorKind::Network => "⚠ AWS unreachable",
+                ErrorKind::Throttled => "⚠ throttled",
+                _ => "⚠ credentials",
+            };
+            Span::styled(what, Style::new().fg(Color::Red))
+        }
     };
     let session = match app.current_profile().map(|p| &p.auth) {
         Some(Auth::SsoSession(s)) => Some(Span::styled(format!(" (sso {s})"), DIM)),
