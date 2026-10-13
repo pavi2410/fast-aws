@@ -25,7 +25,7 @@ insta = "1.49"
 ratatui = "0.30"
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
