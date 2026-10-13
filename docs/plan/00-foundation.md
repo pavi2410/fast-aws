@@ -266,3 +266,35 @@ crates.io into a scratch directory), not by calling AWS.
 - A "raw" toggle in the detail viewer shows the pretty `Debug` output for everything
   else. SDK `Debug` impls already redact fields marked sensitive, which is the safer
   default for secrets.
+
+### Spike 2: `StartLiveTail` event stream (2026-10-13)
+
+**Result: the API is usable from tokio. Runtime behaviour is not yet tested live.**
+
+The SDK side, from the `aws-sdk-cloudwatchlogs` 1.156.0 source:
+
+- `StartLiveTailOutput.response_stream` is an
+  `EventReceiver<StartLiveTailResponseStream, StartLiveTailResponseStreamError>`.
+- `EventReceiver::recv(&mut self).await` returns
+  `Result<Option<StartLiveTailResponseStream>, SdkError<…>>`. `Ok(None)` means the
+  stream ended.
+- Stream items:
+  - `SessionStart`
+  - `SessionUpdate` (carries log events)
+  - `Unknown`, for forward compatibility
+- In-stream errors:
+  - `SessionTimeoutException` (sessions end after 3 hours)
+  - `SessionStreamingException`
+  - `Unhandled`
+
+**Decision:**
+- One tokio task per open log pane loops on `recv()` and forwards `SessionUpdate`
+  events over the UI channel.
+- Closing the pane aborts the task, which drops the receiver and ends the billed
+  session.
+- On `SessionTimeoutException`, reconnect automatically from the last event time.
+- On `SessionStreamingException` or a transport error, switch to the
+  `FilterLogEvents` polling fallback and show that in the pane header.
+
+Live Tail is billed per session minute, so a live check waits for Phase 2 and the
+user's go-ahead.
