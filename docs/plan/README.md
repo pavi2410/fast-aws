@@ -36,7 +36,8 @@ The same keys work for every resource type. Service docs only list *extra* keys.
 | `:` / `Ctrl-P` | Command palette / fuzzy jump to a resource type (`:ec2`, `:s3`, `:fn`) |
 | `/` | Filter the current list (text, or `tag=value`) |
 | `Enter` | Drill into the selected item |
-| `Esc` / `Backspace` | Go back |
+| `Esc` / `Backspace` / `q` | Go back (`q` at the top level quits) |
+| `Ctrl-C` / `:q` | Quit |
 | `d` | Describe: full detail (YAML/JSON viewer) |
 | `l` | Logs for the selected item (if it has any) |
 | `m` | Metrics for the selected item (if it has any) |
@@ -47,7 +48,12 @@ The same keys work for every resource type. Service docs only list *extra* keys.
 | `g` | Go to a related resource (see [relations](relations.md)) |
 | `r` | Force refresh |
 | `P` / `R` | Switch profile / region |
+| `L` | Run SSO login for the current profile (shown when the session has expired) |
+| `:unlock` | Allow mutating actions on a prod profile for this session |
 | `?` | Help for the current view |
+
+Service docs may list a key from this table to say what it does in that view (such as
+`e` editing env vars in Lambda), but never give it a different meaning.
 
 ## Service doc template
 

@@ -46,8 +46,8 @@
 |---|---|---|---|---|
 | `v` | Reveal SecureString | `GetParameter` (`WithDecryption=true`) | safe* | `aws ssm get-parameter --name {n} --with-decryption` |
 | `e` | Edit value (`$EDITOR`, diff) → new version | `PutParameter` (`Overwrite=true`) | mutating | `aws ssm put-parameter --name {n} --overwrite …` |
-| `n` | New parameter at the current path (form: name, type, value, tier, KMS) | `PutParameter` | mutating | |
-| `h` | History: version table with a diff between any two versions | `GetParameterHistory` | safe* | |
+| `a` | Add parameter at the current path (form: name, type, value, tier, KMS) | `PutParameter` | mutating | |
+| `H` | History: version table with a diff between any two versions | `GetParameterHistory` | safe* | |
 | `x→label` | Attach a label to a version | `LabelParameterVersion` | mutating | |
 | `x→export` | Export a subtree as `.env` / JSON / YAML (SecureStrings masked unless confirmed) | `GetParametersByPath` (recursive) | safe* | |
 | `x→delete` | Delete (multi-select supported) | `DeleteParameters` (batches of 10) | destructive | |

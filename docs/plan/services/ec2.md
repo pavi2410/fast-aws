@@ -35,7 +35,7 @@ candidates for later.
 |---|---|---|---|---|
 | `s` | Shell via SSM | `ssm:StartSession` + `session-manager-plugin` | safe | `aws ssm start-session --target {id}` |
 | `S` | SSH (uses public/private IP, `~/.ssh/config`) | shell out to `ssh` | safe | `ssh ec2-user@{ip}` |
-| `c` | Console output | `GetConsoleOutput` (base64 → log pane) | safe | `aws ec2 get-console-output --instance-id {id}` |
+| `o` | Console output | `GetConsoleOutput` (base64 → log pane) | safe | `aws ec2 get-console-output --instance-id {id}` |
 | `x→start` | Start | `StartInstances` | mutating | `aws ec2 start-instances --instance-ids {id}` |
 | `x→stop` | Stop | `StopInstances` | mutating | `aws ec2 stop-instances --instance-ids {id}` |
 | `x→reboot` | Reboot | `RebootInstances` | mutating | `aws ec2 reboot-instances --instance-ids {id}` |

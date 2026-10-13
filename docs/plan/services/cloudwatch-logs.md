@@ -58,7 +58,7 @@ console output, so this service comes early in the [phasing](../phasing.md).
 | Key | Action | API | Safety | CLI |
 |---|---|---|---|---|
 | `l` / `Enter` | Open log pane (live) | `StartLiveTail` | safe | `aws logs tail {group} --follow` |
-| `q` | Insights query on selected groups | `StartQuery` | safe ($) | `aws logs start-query …` |
+| `I` | Insights query on selected groups | `StartQuery` | safe ($) | `aws logs start-query …` |
 | `x→retention` | Set retention | `PutRetentionPolicy` | mutating | `aws logs put-retention-policy --log-group-name {g} --retention-in-days N` |
 | `D` | Export the visible range to a local file | `FilterLogEvents` | safe | |
 | `x→delete` | Delete log group | `DeleteLogGroup` | destructive | |

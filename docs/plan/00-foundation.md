@@ -155,7 +155,8 @@ are shown *inside the pane*, never as a crash or an empty table.
   destructive actions are hidden, not just disabled. `SideEffect` actions stay
   available behind a confirmation (see the safety classes in the [README](README.md#service-doc-template)).
 - **Prod marking:** a per-profile `color = "red"` and `prod = true` tint the header.
-  Prod profiles default to read-only and can be unlocked for the session with `U`.
+  Prod profiles default to read-only and can be unlocked for the session with `:unlock`. It's a typed command,
+  not a single key, so it can't be pressed by accident.
 - `destructive` actions ask you to type the resource name. Bulk actions show the full
   list plus the CLI equivalent before running.
 - EC2 and a few other APIs support `DryRun`. Use it to check permissions before

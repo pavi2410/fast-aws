@@ -51,7 +51,7 @@
 |---|---|---|---|---|
 | `Enter` (item) | Item detail (plain JSON, foldable) | `GetItem` | safe | `aws dynamodb get-item --table-name {t} --key '{…}'` |
 | `e` | Edit item as JSON → diff → put, with a condition that the item didn't change meanwhile | `PutItem` with `ConditionExpression` | mutating | |
-| `n` | New item (template from the key schema) | `PutItem` with `attribute_not_exists(pk)` | mutating | |
+| `a` | Add item (template from the key schema) | `PutItem` with `attribute_not_exists(pk)` | mutating | |
 | `D` | Export the current result set to JSON Lines / CSV | (already loaded + continue paging) | safe | |
 | `Del` | Delete item(s) | `DeleteItem` / `BatchWriteItem` (25 per batch) | destructive | |
 | `x→pitr` | Toggle point-in-time recovery | `UpdateContinuousBackups` | mutating | |
