@@ -61,7 +61,7 @@ never trigger Cost Explorer calls.
 
 - service row → that service's resource list in the TUI (EC2 → `:ec2`, etc.)
 - tag group → resources with that tag, through the
-  `resourcegroupstaggingapi` crate, which is optional and later
+  `aws-sdk-resourcegroupstagging` crate, which is optional and later
 
 ## IAM permissions
 

@@ -9,9 +9,22 @@ Everything here is shared by every service. A service integration should mostly 
 |---|---|
 | UI | `ratatui` 0.30 + `crossterm` |
 | Async runtime | `tokio` |
-| AWS | `aws-config` 1.x + one `aws-sdk-*` crate per service (crate names verified on crates.io, Oct 2026) |
+| AWS | `aws-config` 1.x + one `aws-sdk-*` crate per service (see [crates](#crates-checked-on-cratesio)) |
 | Config | TOML at `~/.config/fast-aws/config.toml` |
 | Clipboard | `arboard` (with an OSC 52 fallback for SSH sessions) |
+
+## Crates (checked on crates.io)
+
+Checked with `cargo search` on 2026-10-13. These are the crate names; check the
+versions again when they're added.
+
+| Purpose | Crates |
+|---|---|
+| Core | `aws-config` 1.12, `aws-sdk-sts`, `aws-sdk-sso`, `aws-sdk-ssooidc` |
+| In-scope services | `aws-sdk-ec2`, `aws-sdk-s3`, `aws-sdk-lambda`, `aws-sdk-apigateway`, `aws-sdk-apigatewayv2`, `aws-sdk-cloudfront`, `aws-sdk-cloudwatchlogs`, `aws-sdk-cloudwatch`, `aws-sdk-costexplorer`, `aws-sdk-iam`, `aws-sdk-cognitoidentityprovider`, `aws-sdk-cognitoidentity`, `aws-sdk-eventbridge`, `aws-sdk-scheduler`, `aws-sdk-sesv2`, `aws-sdk-secretsmanager`, `aws-sdk-ssm`, `aws-sdk-dynamodb`, `aws-sdk-rds` |
+| Supporting | `aws-sdk-acm` (CloudFront certs), `aws-sdk-pricing` (cost hints) |
+| Later / optional | `aws-sdk-pipes`, `aws-sdk-pi`, `aws-sdk-resourcegroupstagging`, `aws-sdk-s3-transfer-manager` (0.x) |
+| UI and testing | `ratatui` 0.30, `crossterm`, `arboard` 3.x, `aws-smithy-mocks` 0.3, `insta` 1.x |
 
 ## Workspace layout (to keep build times manageable)
 
