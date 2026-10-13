@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use aws_sdk_cloudwatchlogs::Client;
 use aws_sdk_cloudwatchlogs::types::{QueryStatus, ResultField};
 use fast_aws_core::fmt::bytes;
+use fast_aws_core::fmt::time::{iso_millis, utc_civil_to_millis};
 use fast_aws_core::{
     AwsError, Cell, Column, Ctx, Detail, ErrorKind, ListQuery, Page, Parent, Query, ResourceKind,
     Row, Scope, Tone, kind_info,
@@ -214,6 +215,8 @@ fn row(fields: &[ResultField]) -> Row {
             .and_then(|f| f.value())
     };
     let time = get("@timestamp").unwrap_or_default();
+    // Insights gives UTC times without a zone; shown in the display zone.
+    let time_cell = utc_civil_to_millis(time).map_or_else(|| Cell::new(time), Cell::time);
     // Everything but the timestamp and Insights' internal @ptr, as field=value.
     let rest: Vec<String> = fields
         .iter()
@@ -237,6 +240,11 @@ fn row(fields: &[ResultField]) -> Row {
         .filter(|f| f.field() != Some("@ptr"))
         .map(|f| {
             let value = f.value().unwrap_or_default();
+            if f.field() == Some("@timestamp")
+                && let Some(ms) = utc_civil_to_millis(value)
+            {
+                return ("@timestamp".to_owned(), json!(iso_millis(ms)));
+            }
             // JSON messages are shown as a tree.
             let parsed = serde_json::from_str::<Value>(value)
                 .ok()
@@ -249,7 +257,7 @@ fn row(fields: &[ResultField]) -> Row {
         .collect();
     Row::new(
         format!("{time}{SEP}{}", Value::Object(map)),
-        vec![time.into(), one_line.into()],
+        vec![time_cell, one_line.into()],
     )
 }
 
@@ -323,7 +331,8 @@ mod tests {
             page.rows[0].cells[1].text,
             "1 matched of 50 records · 2.0 KiB scanned"
         );
-        assert_eq!(page.rows[1].cells[0].text, "2026-10-13 09:00:00.000");
+        assert_eq!(page.rows[1].cells[0].text, "2026-10-13T09:00:00Z");
+        assert!(page.rows[1].cells[0].time_ms.is_some());
         assert_eq!(page.rows[1].cells[1].text, "{\"level\":\"error\"}");
         let d = describe_result(&page.rows[1].id);
         assert_eq!(d.fields["@message"]["level"], "error");

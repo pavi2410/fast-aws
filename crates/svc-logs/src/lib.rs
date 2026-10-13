@@ -9,7 +9,8 @@ mod tail;
 use async_trait::async_trait;
 use aws_sdk_cloudwatchlogs::Client;
 use aws_sdk_cloudwatchlogs::types::{LogGroup, LogStream, OrderBy, OutputLogEvent};
-use fast_aws_core::fmt::{age_of, bytes, or_dash, utc_millis};
+use fast_aws_core::fmt::time::iso_millis;
+use fast_aws_core::fmt::{age_of, bytes, or_dash};
 use fast_aws_core::{
     AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
     kind_info,
@@ -81,7 +82,7 @@ impl ResourceKind for Groups {
             "KmsKeyId": g.kms_key_id(),
             "MetricFilterCount": g.metric_filter_count(),
             "DataProtectionStatus": g.data_protection_status().map(|s| s.as_str()),
-            "CreationTime": g.creation_time().map(utc_millis),
+            "CreationTime": g.creation_time().map(iso_millis),
         });
         Ok(Detail {
             fields,
@@ -196,10 +197,10 @@ impl ResourceKind for Streams {
             "LogGroupName": group.id,
             "LogStreamName": s.log_stream_name(),
             "Arn": s.arn(),
-            "CreationTime": s.creation_time().map(utc_millis),
-            "FirstEventTimestamp": s.first_event_timestamp().map(utc_millis),
-            "LastEventTimestamp": s.last_event_timestamp().map(utc_millis),
-            "LastIngestionTime": s.last_ingestion_time().map(utc_millis),
+            "CreationTime": s.creation_time().map(iso_millis),
+            "FirstEventTimestamp": s.first_event_timestamp().map(iso_millis),
+            "LastEventTimestamp": s.last_event_timestamp().map(iso_millis),
+            "LastIngestionTime": s.last_ingestion_time().map(iso_millis),
         });
         Ok(Detail {
             fields,
@@ -247,8 +248,10 @@ fn stream_row(group: &str, s: &LogStream) -> Row {
         name,
         vec![
             name.into(),
-            or_dash(s.last_event_timestamp().map(utc_millis).as_deref()).into(),
-            or_dash(s.first_event_timestamp().map(utc_millis).as_deref()).into(),
+            s.last_event_timestamp()
+                .map_or_else(|| Cell::new("-"), Cell::time),
+            s.first_event_timestamp()
+                .map_or_else(|| Cell::new("-"), Cell::time),
         ],
     )
     .drill("logs:event", parent)
@@ -256,7 +259,7 @@ fn stream_row(group: &str, s: &LogStream) -> Row {
 
 pub struct Events;
 
-const EVENT_COLUMNS: &[Column] = &[Column::fixed("TIME (UTC)", 19), Column::fill("MESSAGE", 1)];
+const EVENT_COLUMNS: &[Column] = &[Column::fixed("TIME", 19), Column::fill("MESSAGE", 1)];
 
 #[async_trait]
 impl ResourceKind for Events {
@@ -325,7 +328,7 @@ async fn list_events(
 }
 
 fn event_row(e: &OutputLogEvent) -> Row {
-    let time = e.timestamp().map(utc_millis).unwrap_or_default();
+    let time = e.timestamp().map(iso_millis).unwrap_or_default();
     let message = e.message().unwrap_or_default().trim_end();
     let one_line: String = message
         .chars()
@@ -333,7 +336,10 @@ fn event_row(e: &OutputLogEvent) -> Row {
         .collect();
     Row::new(
         format!("{time}{EVENT_SEP}{message}"),
-        vec![time.as_str().into(), one_line.into()],
+        vec![
+            e.timestamp().map_or_else(|| Cell::new("-"), Cell::time),
+            one_line.into(),
+        ],
     )
 }
 
@@ -437,7 +443,12 @@ mod tests {
             .unwrap();
         let messages: Vec<_> = page.rows.iter().map(|r| r.cells[1].text.as_str()).collect();
         assert_eq!(messages, ["second x", "first"]);
-        assert_eq!(page.rows[0].cells[0].text, "1970-01-01 00:00:01");
+        assert_eq!(page.rows[0].cells[0].text, "1970-01-01T00:00:01Z");
+        assert_eq!(
+            page.rows[0].cells[0].time_ms,
+            Some(1000),
+            "drawn in the display zone"
+        );
         assert_eq!(page.next, None);
     }
 

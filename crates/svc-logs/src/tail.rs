@@ -15,7 +15,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use aws_sdk_cloudwatchlogs::Client;
 use aws_sdk_cloudwatchlogs::types::FilteredLogEvent;
-use fast_aws_core::fmt::utc_millis;
+use fast_aws_core::fmt::time::iso_millis;
 use fast_aws_core::{
     AwsError, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, kind_info,
 };
@@ -31,7 +31,7 @@ const PAGES_PER_POLL: usize = 2;
 pub struct Tail;
 
 const COLUMNS: &[Column] = &[
-    Column::fixed("TIME (UTC)", 19),
+    Column::fixed("TIME", 19),
     Column::fixed("STREAM", 24),
     Column::fill("MESSAGE", 1),
 ];
@@ -107,7 +107,7 @@ async fn poll(client: &Client, group: &str, since_ms: i64) -> Result<Page, AwsEr
 }
 
 fn row(e: &FilteredLogEvent) -> Row {
-    let time = e.timestamp().map(utc_millis).unwrap_or_default();
+    let time = e.timestamp().map(iso_millis).unwrap_or_default();
     let message = e.message().unwrap_or_default().trim_end();
     let one_line: String = message
         .chars()
@@ -122,7 +122,12 @@ fn row(e: &FilteredLogEvent) -> Row {
     );
     Row::new(
         id,
-        vec![time.as_str().into(), short.into(), one_line.into()],
+        vec![
+            e.timestamp()
+                .map_or_else(|| fast_aws_core::Cell::new("-"), fast_aws_core::Cell::time),
+            short.into(),
+            one_line.into(),
+        ],
     )
 }
 
