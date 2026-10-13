@@ -72,7 +72,7 @@ const DB_COLUMNS: &[Column] = &[
     Column::fixed("STATUS", 12),
     Column::fill("ROLE", 2),
     Column::fill("ENDPOINT", 3),
-    Column::fixed("CPU 24h (peak)", 30),
+    Column::fixed("CPU 24h (peak)", 20),
 ];
 
 #[async_trait]

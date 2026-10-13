@@ -14,6 +14,7 @@ use crate::list::LoadStatus;
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Style = Style::new().fg(Color::DarkGray);
+const SPARK: Style = Style::new().fg(Color::Cyan);
 const KEY: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 
 fn tone(t: Tone) -> Style {
@@ -202,7 +203,8 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
             Some((spec.column, text))
         });
         Row::new(r.cells.iter().enumerate().map(|(i, c)| match &spark {
-            Some((column, text)) if *column == i => Cell::from(text.clone()).style(DIM),
+            // Cyan, not dim: it must stay readable on the highlighted row.
+            Some((column, text)) if *column == i => Cell::from(text.clone()).style(SPARK),
             _ => Cell::from(c.text.as_str()).style(tone(c.tone)),
         }))
     });
