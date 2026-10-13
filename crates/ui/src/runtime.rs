@@ -44,19 +44,27 @@ pub async fn run(
                     let (factory, tx) = (factory.clone(), tx.clone());
                     let (profile, region) = (app.profile.clone(), app.region.clone());
                     loads.spawn(async move {
-                        let ctx = factory.ctx(&profile, Some(&region)).await;
+                        let ctx = factory.ctx(&profile, &region).await;
                         let _ = tx.send(Input::Msg(Msg::Identity(caller_identity(&ctx).await)));
                     });
                 }
                 Effect::LoadList { generation } => {
-                    let ctx = factory.ctx(&app.profile, Some(&app.region)).await;
-                    let kind = app.list.kind.clone();
-                    loads.spawn(load_list(kind, ctx, generation, tx.clone()));
+                    let (factory, kind) = (factory.clone(), app.list.kind.clone());
+                    let (profile, region) = (app.profile.clone(), app.region.clone());
+                    loads.spawn(load_list(
+                        factory,
+                        profile,
+                        region,
+                        kind,
+                        generation,
+                        tx.clone(),
+                    ));
                 }
                 Effect::LoadDetail { generation, id } => {
-                    let ctx = factory.ctx(&app.profile, Some(&app.region)).await;
-                    let (kind, tx) = (app.list.kind.clone(), tx.clone());
+                    let (factory, kind, tx) = (factory.clone(), app.list.kind.clone(), tx.clone());
+                    let (profile, region) = (app.profile.clone(), app.region.clone());
                     loads.spawn(async move {
+                        let ctx = factory.ctx(&profile, &region).await;
                         let result = kind.describe(&scoped(&ctx, kind.scope()), &id).await;
                         let _ = tx.send(Input::Msg(Msg::Detail { generation, result }));
                     });
@@ -104,12 +112,14 @@ fn scoped(ctx: &Ctx, scope: Scope) -> Ctx {
 
 /// Streams every page of a list to the app, stopping at the first error.
 async fn load_list(
+    factory: Arc<ConfigFactory>,
+    profile: String,
+    region: String,
     kind: Arc<dyn ResourceKind>,
-    ctx: Ctx,
     generation: u64,
     tx: UnboundedSender<Input>,
 ) {
-    let ctx = scoped(&ctx, kind.scope());
+    let ctx = scoped(&factory.ctx(&profile, &region).await, kind.scope());
     let mut query = ListQuery::default();
     loop {
         let result = kind.list(&ctx, &query).await;

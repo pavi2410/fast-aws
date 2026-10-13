@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use fast_aws_core::profiles::ProfileCatalog;
-use fast_aws_core::{ConfigFactory, Registry};
+use fast_aws_core::{ConfigFactory, Registry, default_region};
 use fast_aws_ui::app::App;
 
 const USAGE: &str = "\
@@ -99,13 +99,10 @@ async fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    // Loading the config resolves the region (flag, profile, environment, fallback)
-    // without contacting AWS; credentials are only fetched by the first call.
+    let region = args
+        .region
+        .unwrap_or_else(|| default_region(catalog.get(&profile).and_then(|p| p.region.as_deref())));
     let factory = Arc::new(ConfigFactory::default());
-    let region = match args.region {
-        Some(region) => region,
-        None => factory.ctx(&profile, None).await.region,
-    };
 
     let (app, effects) = App::new(registry, catalog, profile, region, kind);
     match fast_aws_ui::runtime::run(app, effects, factory).await {

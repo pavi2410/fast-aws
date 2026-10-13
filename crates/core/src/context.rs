@@ -63,14 +63,18 @@ pub struct ConfigFactory {
 }
 
 impl ConfigFactory {
-    /// Returns a context for `profile`, in `region` or the profile's own region.
-    pub async fn ctx(&self, profile: &str, region: Option<&str>) -> Ctx {
+    /// Returns a context for `profile` in `region`.
+    ///
+    /// The region is always given, so the SDK never runs its own region lookup,
+    /// which could otherwise probe instance metadata and stall on a laptop.
+    pub async fn ctx(&self, profile: &str, region: &str) -> Ctx {
         let mut cache = self.by_profile.lock().await;
         let base = match cache.get(profile) {
             Some(ctx) => ctx.clone(),
             None => {
                 let config = aws_config::defaults(BehaviorVersion::latest())
                     .profile_name(profile)
+                    .region(Region::new(region.to_owned()))
                     .retry_config(RetryConfig::adaptive())
                     .load()
                     .await;
@@ -79,11 +83,30 @@ impl ConfigFactory {
                 ctx
             }
         };
-        match region {
-            Some(r) if r != base.region => base.in_region(r),
-            _ => base,
+        if base.region == region {
+            base
+        } else {
+            base.in_region(region)
         }
     }
+}
+
+/// The region to start in when none was asked for: `AWS_REGION`, then
+/// `AWS_DEFAULT_REGION`, then the profile's `region`, then [`FALLBACK_REGION`].
+/// This is the SDK's order, minus the instance-metadata lookup.
+pub fn default_region(profile_region: Option<&str>) -> String {
+    default_region_from(|k| std::env::var(k).ok(), profile_region)
+}
+
+fn default_region_from(
+    env: impl Fn(&str) -> Option<String>,
+    profile_region: Option<&str>,
+) -> String {
+    ["AWS_REGION", "AWS_DEFAULT_REGION"]
+        .into_iter()
+        .find_map(|k| env(k).filter(|v| !v.is_empty()))
+        .or_else(|| profile_region.map(str::to_owned))
+        .unwrap_or_else(|| FALLBACK_REGION.to_owned())
 }
 
 /// Who the current credentials belong to, shown in the header.
@@ -124,6 +147,44 @@ mod tests {
         assert_eq!(other.profile, "acme-dev");
         assert_eq!(other.region, "us-east-1");
         assert_eq!(other.config().region().unwrap().as_ref(), "us-east-1");
+    }
+
+    #[test]
+    fn default_region_follows_the_sdk_order_without_imds() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                pairs
+                    .iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        assert_eq!(default_region_from(env(&[]), None), FALLBACK_REGION);
+        assert_eq!(
+            default_region_from(env(&[]), Some("eu-west-1")),
+            "eu-west-1"
+        );
+        assert_eq!(
+            default_region_from(
+                env(&[("AWS_DEFAULT_REGION", "ap-south-1")]),
+                Some("eu-west-1")
+            ),
+            "ap-south-1"
+        );
+        assert_eq!(
+            default_region_from(
+                env(&[
+                    ("AWS_REGION", "us-west-2"),
+                    ("AWS_DEFAULT_REGION", "ap-south-1")
+                ]),
+                Some("eu-west-1")
+            ),
+            "us-west-2"
+        );
+        assert_eq!(
+            default_region_from(env(&[("AWS_REGION", "")]), Some("eu-west-1")),
+            "eu-west-1"
+        );
     }
 
     #[test]
