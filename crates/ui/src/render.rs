@@ -214,13 +214,7 @@ fn status_span(list: &crate::list::ListView, status: &LoadStatus) -> Span<'stati
 fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
     let list = &app.list;
     let columns = list.kind.columns();
-    let widths: Vec<Constraint> = columns
-        .iter()
-        .map(|c| match c.width {
-            ColumnWidth::Fixed(n) => Constraint::Length(n),
-            ColumnWidth::Fill(w) => Constraint::Fill(w),
-        })
-        .collect();
+    let widths = column_widths(columns, area.width);
     let header = Row::new(columns.iter().map(|c| Cell::from(c.title))).style(DIM.bold());
     let rows = list.visible_rows().map(|r| {
         // A fetched sparkline replaces its cell; one being fetched shows `…`.
@@ -271,6 +265,40 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
         let msg = Paragraph::new(format!("no {} in {place}", list.kind.title())).style(DIM);
         frame.render_widget(msg, area.inner(ratatui::layout::Margin::new(2, 2)));
     }
+}
+
+/// The least a flexible column (usually the name) gets when space is tight.
+const MIN_FILL: u16 = 14;
+
+/// Column constraints for `width` cells. Normally fixed columns get their
+/// width and flexible ones share the rest; when that would leave a flexible
+/// column under [`MIN_FILL`], fixed columns become maximums so they shrink
+/// instead of the name disappearing.
+fn column_widths(columns: &[fast_aws_core::Column], width: u16) -> Vec<Constraint> {
+    const SPACING: u16 = 2;
+    const HIGHLIGHT: u16 = 1;
+    let fixed: u16 = columns
+        .iter()
+        .filter_map(|c| match c.width {
+            ColumnWidth::Fixed(n) => Some(n),
+            ColumnWidth::Fill(_) => None,
+        })
+        .sum();
+    let fills = columns
+        .iter()
+        .filter(|c| matches!(c.width, ColumnWidth::Fill(_)))
+        .count() as u16;
+    let spacing = SPACING * columns.len().saturating_sub(1) as u16 + HIGHLIGHT;
+    let tight = fixed + spacing + MIN_FILL * fills > width;
+    columns
+        .iter()
+        .map(|c| match (c.width, tight) {
+            (ColumnWidth::Fixed(n), false) => Constraint::Length(n),
+            (ColumnWidth::Fixed(n), true) => Constraint::Max(n),
+            (ColumnWidth::Fill(w), false) => Constraint::Fill(w),
+            (ColumnWidth::Fill(_), true) => Constraint::Min(MIN_FILL),
+        })
+        .collect()
 }
 
 /// A one-line summary of an error, for title bars.
@@ -919,6 +947,20 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(70, 12)).unwrap();
         terminal.draw(|f| draw(f, &app)).unwrap();
         insta::assert_snapshot!(terminal.backend().to_string());
+    }
+
+    #[test]
+    fn a_narrow_screen_keeps_the_name_column() {
+        use fast_aws_core::Column;
+        const WIDE: &[Column] = &[
+            Column::fill("NAME", 1),
+            Column::fixed("ID", 40),
+            Column::fixed("STATE", 40),
+        ];
+        assert_eq!(column_widths(WIDE, 200)[0], Constraint::Fill(1));
+        let tight = column_widths(WIDE, 60);
+        assert_eq!(tight[0], Constraint::Min(MIN_FILL));
+        assert_eq!(tight[1], Constraint::Max(40));
     }
 
     #[test]
