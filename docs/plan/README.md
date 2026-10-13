@@ -47,6 +47,7 @@ The same keys work for every resource type. Service docs only list *extra* keys.
 | `x` | Action menu |
 | `g` | Go to a related resource (see [relations](relations.md)) |
 | `r` | Force refresh |
+| `n` | Load more (lists pause after a few pages) |
 | `P` / `R` | Switch profile / region |
 | `L` | Run SSO login for the current profile (shown when the session has expired) |
 | `:unlock` | Allow mutating actions on a prod profile for this session |

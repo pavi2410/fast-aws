@@ -152,6 +152,21 @@ mod tests {
     }
 
     #[test]
+    fn palette_names_are_unique() {
+        // Prefix matching takes the first kind registered, so a shared alias would
+        // silently hide one of the kinds.
+        let registry = registry();
+        let mut seen = std::collections::HashMap::new();
+        for kind in registry.kinds() {
+            for name in std::iter::once(kind.id()).chain(kind.aliases().iter().copied()) {
+                if let Some(other) = seen.insert(name, kind.id()) {
+                    panic!("`{name}` is used by both {other} and {}", kind.id());
+                }
+            }
+        }
+    }
+
+    #[test]
     fn ec2_is_registered() {
         assert_eq!(registry().find("ec2").unwrap().id(), "ec2:instance");
     }
