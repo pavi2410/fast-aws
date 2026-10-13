@@ -52,7 +52,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_footer(frame, footer, app);
 
     match &app.overlay {
-        Overlay::None | Overlay::Filter => {}
+        Overlay::None | Overlay::Filter | Overlay::Prompt(..) => {}
         Overlay::Palette(input, at) => draw_palette(frame, body, app, input, *at),
         Overlay::Profiles(at) => draw_profiles(frame, body, app, *at),
         Overlay::Regions(at) => draw_regions(frame, body, app, *at),
@@ -346,6 +346,12 @@ fn hints(pairs: &[(&'static str, &'static str)]) -> Line<'static> {
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let line = match (&app.overlay, &app.flash) {
+        (Overlay::Prompt(query, input), _) => Line::from(vec![
+            Span::styled(format!(" {}: ", query.prompt), KEY),
+            Span::raw(input.clone()),
+            Span::styled("▏", Style::new().fg(ACCENT)),
+            Span::styled("   enter run · esc cancel", DIM),
+        ]),
         (Overlay::Palette(input, _), _) => Line::from(vec![
             Span::styled(" :", KEY),
             Span::raw(input.clone()),

@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use fast_aws_core::profiles::{ProfileCatalog, ProfileInfo};
 use fast_aws_core::{
-    AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Parent, Registry, Relation,
-    ResourceKind, Scope,
+    AwsError, CallerIdentity, Config, Detail, ErrorKind, Guard, Page, Parent, Query, Registry,
+    Relation, ResourceKind, Scope,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -118,6 +118,8 @@ pub enum Overlay {
     Regions(usize),
     /// `g`: index into [`App::relations_menu`].
     Relations(usize),
+    /// A row's question being answered, with what has been typed.
+    Prompt(Query, String),
     Help,
 }
 
@@ -300,6 +302,7 @@ impl App {
             Overlay::Profiles(i) => self.profiles_key(key, i),
             Overlay::Regions(i) => self.regions_key(key, i),
             Overlay::Relations(i) => self.relations_key(key, i),
+            Overlay::Prompt(query, input) => self.prompt_key(key, query, input),
             Overlay::Help => {
                 self.overlay = Overlay::None;
                 Vec::new()
@@ -399,6 +402,45 @@ impl App {
             KeyCode::Char('q') => {
                 self.should_quit = true;
                 return vec![Effect::Quit];
+            }
+            KeyCode::Char(c) => {
+                let query = self
+                    .list
+                    .selected_row()
+                    .and_then(|r| r.queries.iter().find(|q| q.key == c));
+                if let Some(query) = query.cloned() {
+                    self.overlay = Overlay::Prompt(query, String::new());
+                }
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    fn prompt_key(&mut self, key: KeyEvent, query: Query, mut input: String) -> Vec<Effect> {
+        match key.code {
+            KeyCode::Esc => self.overlay = Overlay::None,
+            KeyCode::Enter => {
+                self.overlay = Overlay::None;
+                let input = input.trim().to_owned();
+                if input.is_empty() {
+                    return Vec::new();
+                }
+                let Some(kind) = self.registry.get(query.kind) else {
+                    self.flash = Some(format!("{} isn't available in this build", query.kind));
+                    return Vec::new();
+                };
+                let (list, load) = self.list_for(kind, Some(query.parent(&input)));
+                self.back.push(std::mem::replace(&mut self.list, list));
+                return std::iter::once(Effect::CancelLoads).chain(load).collect();
+            }
+            KeyCode::Backspace => {
+                input.pop();
+                self.overlay = Overlay::Prompt(query, input);
+            }
+            KeyCode::Char(c) => {
+                input.push(c);
+                self.overlay = Overlay::Prompt(query, input);
             }
             _ => {}
         }
@@ -1196,6 +1238,33 @@ pub(crate) mod tests {
             })
         );
         assert_eq!(app.list.filter, "p1");
+    }
+
+    #[test]
+    fn a_row_query_prompts_and_opens_the_answer() {
+        let mut app = empty_app();
+        app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![row("a", "web-1").query('S', "parts named", "fake:part", "a")],
+                next: None,
+            }),
+        });
+        press(&mut app, "S");
+        assert!(
+            matches!(&app.overlay, Overlay::Prompt(q, input) if q.key == 'S' && input.is_empty())
+        );
+        press(&mut app, "bolt");
+        let effects = app.handle_key(key(KeyCode::Enter));
+        assert_eq!(effects[0], Effect::CancelLoads);
+        assert_eq!(app.list.kind.id(), "fake:part");
+        assert_eq!(app.list.parent.as_ref().unwrap().id, "a\nbolt");
+        assert_eq!(app.breadcrumb(), ["Things", "bolt"]);
+
+        // Keys a row doesn't offer do nothing.
+        app.handle_key(key(KeyCode::Esc));
+        press(&mut app, "Z");
+        assert_eq!(app.overlay, Overlay::None);
     }
 
     #[test]
