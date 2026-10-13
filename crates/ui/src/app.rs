@@ -496,7 +496,9 @@ impl App {
 
     /// Stores the current list once it has stopped loading.
     fn remember_list(&mut self) {
-        if self.list.is_loading() || matches!(self.list.status, LoadStatus::Failed(_)) {
+        let unfinished =
+            self.list.is_loading() || matches!(self.list.status, LoadStatus::Failed(_));
+        if unfinished || !self.list.kind.cacheable() {
             return;
         }
         let key = self.cache_key(self.list.kind.id(), self.list.parent.as_ref());
@@ -1165,6 +1167,67 @@ pub(crate) mod tests {
                 .iter()
                 .any(|e| matches!(e, Effect::LoadList { .. }))
         );
+    }
+
+    /// A kind that shows secrets and opts out of the cache.
+    struct FakeSecret;
+
+    #[async_trait::async_trait]
+    impl ResourceKind for FakeSecret {
+        fn id(&self) -> &'static str {
+            "fake:secret"
+        }
+        fn title(&self) -> &'static str {
+            "Secret"
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            &["secret"]
+        }
+        fn scope(&self) -> Scope {
+            Scope::Regional
+        }
+        fn columns(&self) -> &'static [fast_aws_core::Column] {
+            &[]
+        }
+        fn cacheable(&self) -> bool {
+            false
+        }
+        async fn list(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: &fast_aws_core::ListQuery,
+        ) -> Result<Page, AwsError> {
+            Ok(Page::default())
+        }
+        async fn describe(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: Option<&Parent>,
+            _: &str,
+        ) -> Result<Detail, AwsError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn kinds_that_opt_out_are_never_cached() {
+        let mut app = app();
+        app.registry.register(FakeSecret);
+        press(&mut app, ":secret");
+        app.handle_key(key(KeyCode::Enter));
+        let generation = app.list.generation;
+        app.handle_msg(Msg::Page {
+            generation,
+            result: Ok(Page {
+                rows: vec![row("pw", "hunter2")],
+                next: None,
+            }),
+        });
+        press(&mut app, ":thing");
+        app.handle_key(key(KeyCode::Enter));
+        press(&mut app, ":secret");
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.list.total(), 0, "nothing kept after leaving");
     }
 
     #[test]

@@ -318,6 +318,13 @@ pub trait ResourceKind: Send + Sync {
         true
     }
 
+    /// Whether loaded lists of this kind may be kept in the in-memory cache.
+    /// Kinds that show secret values return `false`, so leaving the view is the
+    /// end of them.
+    fn cacheable(&self) -> bool {
+        true
+    }
+
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> Result<Page, AwsError>;
     async fn describe(
         &self,
