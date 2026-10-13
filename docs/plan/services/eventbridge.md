@@ -41,7 +41,7 @@ Scope: regional.
 | `T` | Test pattern against an event | `TestEventPattern` | safe | `aws events test-event-pattern …` |
 | `x→enable/disable` | Toggle a rule | `EnableRule` / `DisableRule` | mutating | `aws events disable-rule --name {n} --event-bus-name {b}` |
 | `x→enable/disable` | Toggle a schedule | `GetSchedule` → `UpdateSchedule` with `State` changed | mutating | |
-| `x→put` | Send a test event (`$EDITOR`, prefilled from the rule pattern) | `PutEvents` | mutating | `aws events put-events --entries file://e.json` |
+| `x→put` | Send a test event (`$EDITOR`, prefilled from the rule pattern) | `PutEvents` | side-effect | `aws events put-events --entries file://e.json` |
 | `x→replay` | Start a replay from an archive (time range) | `StartReplay` | mutating | |
 | `x→delete` | Delete rule (removes targets first) | `RemoveTargets` → `DeleteRule` | destructive | |
 

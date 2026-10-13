@@ -36,7 +36,7 @@
 
 | Key | Action | API | Safety | CLI |
 |---|---|---|---|---|
-| `t` | Send a test email (from a verified identity; form: to, subject, body; optional template + data) | `SendEmail` | mutating | `aws sesv2 send-email …` |
+| `t` | Send a test email (from a verified identity; form: to, subject, body; optional template + data) | `SendEmail` | side-effect | `aws sesv2 send-email …` |
 | `x→render` | Render a template with test data | `TestRenderEmailTemplate` | safe | |
 | `x→verify` | Add an identity (email or domain) | `CreateEmailIdentity` | mutating | |
 | `x→unsuppress` | Remove an address from the suppression list | `DeleteSuppressedDestination` | mutating | |

@@ -30,15 +30,15 @@
 
 | Key | Action | API | Safety | CLI |
 |---|---|---|---|---|
-| `t` | Test-invoke a route (REST only; method, path, headers and body in `$EDITOR`) | v1 `TestInvokeMethod` | safe* | `aws apigateway test-invoke-method …` |
+| `t` | Test-invoke a route (REST only; method, path, headers and body in `$EDITOR`) | v1 `TestInvokeMethod` | side-effect | `aws apigateway test-invoke-method …` |
 | `u` | Copy the invoke URL for the stage + route | — | safe | |
 | `l` | Execution / access logs for the stage | Logs (via stage log settings) | safe | |
 | `x→deploy` | Create a deployment to a stage | v1 `CreateDeployment` / v2 `CreateDeployment` | mutating | |
 | `x→flush` | Flush stage cache (REST) | `FlushStageCache` | mutating | |
 | `x→throttle` | Edit stage throttling | `UpdateStage` | mutating | |
 
-\* `TestInvokeMethod` really calls the backend integration, so it can cause side
-effects. Confirm it like Lambda invoke.
+`TestInvokeMethod` really calls the backend integration, which is why it's
+`side-effect` and not `safe`.
 
 ## Special views
 

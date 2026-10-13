@@ -57,7 +57,7 @@ pub trait ResourceKind: Send + Sync {
 pub struct ActionSpec {
     pub key: char,
     pub label: &'static str,
-    pub safety: Safety,               // Safe | Mutating | Destructive
+    pub safety: Safety,               // Safe | SideEffect | Mutating | Destructive
     pub cli_template: &'static str,   // "aws ec2 stop-instances --instance-ids {id}"
     pub confirm: Confirm,             // None | YesNo | TypeName
 }
@@ -152,7 +152,8 @@ are shown *inside the pane*, never as a crash or an empty table.
 ## Safety
 
 - **Read-only mode** comes from `--read-only` or from per-profile config. Mutating and
-  destructive actions are hidden, not just disabled.
+  destructive actions are hidden, not just disabled. `SideEffect` actions stay
+  available behind a confirmation (see the safety classes in the [README](README.md#service-doc-template)).
 - **Prod marking:** a per-profile `color = "red"` and `prod = true` tint the header.
   Prod profiles default to read-only and can be unlocked for the session with `U`.
 - `destructive` actions ask you to type the resource name. Bulk actions show the full

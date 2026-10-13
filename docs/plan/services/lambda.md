@@ -27,7 +27,7 @@
 
 | Key | Action | API | Safety | CLI |
 |---|---|---|---|---|
-| `i` | Invoke (payload in `$EDITOR`) | `Invoke` with `LogType=Tail` | mutating* | `aws lambda invoke --function-name {name} --payload file://p.json out.json` |
+| `i` | Invoke (payload in `$EDITOR`) | `Invoke` with `LogType=Tail` | side-effect | `aws lambda invoke --function-name {name} --payload file://p.json out.json` |
 | `l` | Tail logs (`/aws/lambda/{name}`, or the configured log group) | Logs live tail | safe | `aws logs tail /aws/lambda/{name} --follow` |
 | `e` | Edit env vars as YAML → diff → apply | `UpdateFunctionConfiguration` | mutating | |
 | `x→concurrency` | Set/clear reserved concurrency | `PutFunctionConcurrency` / `DeleteFunctionConcurrency` | mutating | |
@@ -35,9 +35,6 @@
 | `x→alias` | Point an alias at a version (with weighted routing) | `UpdateAlias` | mutating | |
 | `x→deploy` | Upload a zip from a local path | `UpdateFunctionCode` | mutating | |
 | `x→delete` | Delete function | `DeleteFunction` | destructive | |
-
-\* Invoke is classed as mutating because the function can have side effects. It's
-allowed in read-only mode only after an extra confirmation.
 
 ## Special views
 

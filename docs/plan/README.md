@@ -56,7 +56,7 @@ Each service file has these sections, in this order:
 - **Crates & scope**: SDK crate(s) and whether it is regional, global, or pinned to one region
 - **Resource kinds**: what appears in the palette, with the list/describe API calls
 - **Columns**: default list columns
-- **Actions**: key, API call, safety class (`safe` / `mutating` / `destructive`), CLI equivalent
+- **Actions**: key, API call, safety class (`safe` / `side-effect` / `mutating` / `destructive`), CLI equivalent
 - **Relations**: what `g` can jump to
 - **Special views**: anything beyond table + describe
 - **IAM permissions**: read-only set and the extra write set
@@ -65,5 +65,15 @@ Each service file has these sections, in this order:
 Safety classes:
 
 - `safe`: read-only, or an action with no lasting effect (such as copying a presigned URL)
+- `side-effect`: doesn't change AWS configuration, but runs real code or sends real
+  messages (invoke a Lambda, test-invoke an API route, send a test email, put a test
+  event). It always asks for a y/n confirmation. It's **allowed in read-only mode**,
+  since debugging is the point of read-only mode, but on prod profiles it needs the
+  session unlocked.
 - `mutating`: changes state but is reversible (stop an instance, disable a rule)
-- `destructive`: deletes data or can't be undone; needs typed confirmation and is blocked in read-only mode
+- `destructive`: deletes data or can't be undone; needs typed confirmation
+
+In read-only mode, `mutating` and `destructive` actions are hidden.
+
+A `*` next to a class in a service table means there's an extra rule, explained in a
+note under that table (for example, revealing a secret asks for confirmation on prod).

@@ -72,8 +72,8 @@ read-only.
 Rolled out by safety class, after read-only mode, prod marking and the confirm dialog
 are in place:
 
-1. **Safe actions with side effects:** Lambda invoke, API GW test-invoke, SES test
-   send, EventBridge test event, CloudFront function test
+1. **`side-effect`:** Lambda invoke, API GW test-invoke, SES test send, EventBridge
+   test event (CloudFront function test is `safe`; it runs isolated)
 2. **Mutating:**
    - EC2 start/stop/reboot
    - Lambda env edit, publish, alias
@@ -116,5 +116,7 @@ tests).
   SDK's `aws-smithy-mocks` / replay client), so CI never needs AWS credentials.
 - **UI snapshots:** `ratatui` `TestBackend` buffer snapshots (`insta`) for each main
   view, in both stale and error states.
-- **Safety tests:** for every `ActionSpec` marked `Mutating` or `Destructive`, assert
-  it's hidden in read-only mode and that destructive ones ask for typed confirmation.
+- **Safety tests:** for every `ActionSpec`, assert that:
+  - `Mutating` and `Destructive` actions are hidden in read-only mode
+  - `SideEffect` actions always confirm, and are blocked on locked prod profiles
+  - `Destructive` actions ask for typed confirmation
