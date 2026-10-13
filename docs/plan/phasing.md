@@ -112,6 +112,7 @@ tests).
 - Saved views and bookmarks
 - Cost hints in other views (Pricing API + cached CE data)
 - In-TUI SSO login (device flow)
+- MFA prompt for `mfa_serial` profiles (custom credentials provider; see [spike 3](00-foundation.md#spike-3-mfa-prompting-in-aws-config-2026-10-13))
 - EventBridge Pipes, Performance Insights, ECS / SQS / SNS (next service wave)
 
 ## Testing approach (all phases)
