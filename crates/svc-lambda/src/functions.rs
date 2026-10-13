@@ -201,7 +201,8 @@ fn relations(mut row: Row, f: &FunctionConfiguration) -> Row {
         region: None,
     };
     row = row
-        .relate_inside(format!("logs {group}"), "logs:stream", parent)
+        .relate_inside(format!("logs {group}"), "logs:stream", parent.clone())
+        .relate_inside("follow logs live", "logs:tail", parent)
         .relate("its triggers", "lambda:esm", name);
     for sg in f
         .vpc_config()
@@ -285,6 +286,7 @@ mod tests {
             [
                 ("role thumbs-exec", "iam:role"),
                 ("logs /aws/lambda/thumbs", "logs:stream"),
+                ("follow logs live", "logs:tail"),
                 ("its triggers", "lambda:esm"),
             ]
         );
