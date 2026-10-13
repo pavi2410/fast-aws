@@ -17,8 +17,9 @@ usage: fast-aws [RESOURCE] [--profile NAME] [--region REGION]
   -r, --region       AWS region (default: the profile's region)
       --read-only    never offer actions that change anything (also settable
                      per profile in ~/.config/fast-aws/config.toml)
-      --no-metrics   no sparklines (they use CloudWatch GetMetricData, which
-                     is billed per metric; also `metrics = false` in config)
+      --metrics      show sparklines (they use CloudWatch GetMetricData, which
+                     is billed per metric; also `metrics = true` in config)
+      --no-metrics   no sparklines, even if the config turns them on
   -h, --help         show this help
   -V, --version      show the version
 
@@ -30,6 +31,7 @@ struct Args {
     profile: Option<String>,
     region: Option<String>,
     read_only: bool,
+    metrics: bool,
     no_metrics: bool,
 }
 
@@ -53,6 +55,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Parsed, String> 
             "-p" | "--profile" => parsed.profile = Some(value(&arg)?),
             "-r" | "--region" => parsed.region = Some(value(&arg)?),
             "--read-only" => parsed.read_only = true,
+            "--metrics" => parsed.metrics = true,
             "--no-metrics" => parsed.no_metrics = true,
             _ if arg.starts_with('-') => return Err(format!("unknown option {arg}")),
             _ if parsed.resource.is_none() => parsed.resource = Some(arg),
@@ -136,7 +139,8 @@ async fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let metrics = !args.no_metrics && config.metrics.unwrap_or(true);
+    // Off unless asked for: GetMetricData is billed per metric.
+    let metrics = !args.no_metrics && (args.metrics || config.metrics.unwrap_or(false));
     let (mut app, effects) = App::new(registry, catalog, profile, region, kind);
     app.set_safety(config, args.read_only);
     app.set_metrics(metrics);
@@ -170,6 +174,7 @@ mod tests {
                 profile: Some("dev".into()),
                 region: Some("eu-west-1".into()),
                 read_only: false,
+                metrics: false,
                 no_metrics: false,
             }
         );

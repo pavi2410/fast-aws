@@ -62,7 +62,8 @@ Phases 2 and 3, done since (same day):
   (5/s in eu-central-1), hence the small poll.
 - the DynamoDB item explorer (`Q`, Query only)
 - revealing a secret (`v`, then type `reveal`)
-- sparklines (Lambda errors, EC2 and RDS CPU; `--no-metrics` turns them off)
+- sparklines (Lambda errors, EC2 and RDS CPU), off by default; `--metrics` or
+  `metrics = true` turns them on
 
 Billed or data-reading features (sparklines, Insights, the log tail, DynamoDB
 items, secret values) have been tested against mocks only so far.

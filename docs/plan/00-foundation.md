@@ -226,7 +226,7 @@ rejected, so the app won't start with a typo in this file. Supported today:
 
 ```toml
 read_only = true          # every profile (or pass --read-only)
-metrics = false           # no sparklines; GetMetricData is billed (or --no-metrics)
+metrics = true            # sparklines; GetMetricData is billed (or --metrics)
 
 [profiles.generex-qa-ro]
 read_only = true

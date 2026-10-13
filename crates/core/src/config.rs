@@ -3,7 +3,7 @@
 //!
 //! ```toml
 //! read_only = true             # every profile
-//! metrics = false              # no sparklines (GetMetricData is billed)
+//! metrics = true               # sparklines (GetMetricData is billed per metric)
 //!
 //! [profiles.generex-qa-ro]
 //! read_only = true
@@ -26,7 +26,7 @@ pub struct Config {
     #[serde(default)]
     pub read_only: bool,
     /// Sparklines from CloudWatch (`GetMetricData`, billed per metric).
-    /// On unless set to `false`.
+    /// Off unless set to `true` (or `--metrics`).
     #[serde(default)]
     pub metrics: Option<bool>,
     #[serde(default)]
