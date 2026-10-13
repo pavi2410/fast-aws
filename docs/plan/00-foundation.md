@@ -246,3 +246,23 @@ works through it, and service docs link here instead of keeping their own lists.
 | 6 | Is `aws-sdk-s3-transfer-manager` (0.x) ready for multipart upload/download? | [S3](services/s3.md#gotchas) | small hand-written multipart helper |
 | 7 | With `PutParameter` `Overwrite=true`, does leaving out `KeyId` re-encrypt a SecureString with `aws/ssm`? | [SSM](services/ssm-parameter-store.md#gotchas) | always send `KeyId` (planned anyway) |
 | 8 | Cold build time of the full workspace, and of a single-service rebuild | [above](#workspace-layout-to-keep-build-times-manageable) | fewer default features, faster linker |
+
+## Spike results
+
+Each answer was found by reading the published crate source (downloaded from
+crates.io into a scratch directory), not by calling AWS.
+
+### Spike 1: serde for SDK types (2026-10-13)
+
+**Result: not available.**
+- `aws-sdk-sts` 1.119.0 has no `serde-serialize` feature and no `aws_sdk_unstable`
+  cfg anywhere in `src/`.
+- `serde_json` is only a dev-dependency.
+- Every `aws-sdk-*` crate is generated the same way, so this holds for all of them.
+
+**Decision:** use the fallback.
+- Each resource kind maps the SDK output into its own `Detail` tree (`serde_json::Value`
+  built by hand), covering the useful fields.
+- A "raw" toggle in the detail viewer shows the pretty `Debug` output for everything
+  else. SDK `Debug` impls already redact fields marked sensitive, which is the safer
+  default for secrets.
