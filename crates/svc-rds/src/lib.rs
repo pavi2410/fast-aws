@@ -73,6 +73,7 @@ const DB_COLUMNS: &[Column] = &[
     Column::fill("ROLE", 2),
     Column::fill("ENDPOINT", 3),
     Column::fixed("CPU 24h (peak)", 20),
+    Column::fixed("CONNS 24h (peak)", 18),
 ];
 
 #[async_trait]
@@ -159,6 +160,7 @@ fn cluster_row(c: &DbCluster) -> Row {
             format!("cluster ({members} instances)").into(),
             or_dash(c.endpoint()).into(),
             "".into(),
+            "".into(),
         ],
     )
 }
@@ -185,6 +187,7 @@ fn instance_row(i: &DbInstance) -> Row {
             role.into(),
             endpoint.into(),
             "".into(),
+            "".into(),
         ],
     )
     .metric(MetricSpec {
@@ -195,6 +198,16 @@ fn instance_row(i: &DbInstance) -> Row {
         summary: Summary::Peak,
         unit: "%",
         column: 6,
+    })
+    // The hourly maximum: an average hides short bursts of connections.
+    .metric(MetricSpec {
+        namespace: "AWS/RDS",
+        name: "DatabaseConnections",
+        dimensions: vec![("DBInstanceIdentifier", name.to_owned())],
+        stat: "Maximum",
+        summary: Summary::Peak,
+        unit: "",
+        column: 7,
     })
 }
 
@@ -630,6 +643,20 @@ mod tests {
             second.rows[1].cells[5].text,
             "legacy.x.rds.amazonaws.com:3306"
         );
+        assert!(first.rows[0].metrics.is_empty(), "clusters have none");
+        let metrics: Vec<_> = second.rows[1]
+            .metrics
+            .iter()
+            .map(|m| (m.name, m.column))
+            .collect();
+        assert_eq!(metrics, [("CPUUtilization", 6), ("DatabaseConnections", 7)]);
+        assert!(
+            second
+                .rows
+                .iter()
+                .all(|r| r.cells.len() == DB_COLUMNS.len())
+        );
+        assert!(first.rows.iter().all(|r| r.cells.len() == DB_COLUMNS.len()));
         assert_eq!(second.next, None);
     }
 }
