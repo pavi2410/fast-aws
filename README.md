@@ -113,7 +113,7 @@ prod = true               # red PROD badge
 
 ## Building
 
-Rust 1.98 (pinned in `rust-toolchain.toml`). The AWS SDK crates are large: a
+Rust 1.99 (pinned in `rust-toolchain.toml`). The AWS SDK crates are large: a
 cold build takes a few minutes and up to about 9 GiB of memory with 6 parallel
 jobs; use `cargo build -j 6` (or fewer) if a build is killed. Day-to-day
 rebuilds take a few seconds.
