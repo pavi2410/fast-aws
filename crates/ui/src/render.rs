@@ -644,11 +644,7 @@ fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str, at: usize
                 ),
                 Span::styled(aliases, DIM),
             ]);
-            if i == at {
-                line.style(SELECTED)
-            } else {
-                line
-            }
+            if i == at { line.style(SELECTED) } else { line }
         })
         .collect();
     let height = lines.len().clamp(1, 14) as u16 + 2;
