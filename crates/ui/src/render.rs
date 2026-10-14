@@ -15,6 +15,9 @@ use crate::list::LoadStatus;
 const ACCENT: Color = Color::Cyan;
 const DIM: Style = Style::new().fg(Color::DarkGray);
 const SPARK: Style = Style::new().fg(Color::Cyan);
+/// The selected row: a faint background (256-colour grey #303030), darker
+/// than `DIM` text so dim cells and sparklines stay readable on it.
+const SELECTED: Style = Style::new().bg(Color::Indexed(236));
 const KEY: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 
 fn tone(t: Tone) -> Style {
@@ -257,7 +260,7 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
     let table = Table::new(rows, widths)
         .header(header)
         .column_spacing(2)
-        .row_highlight_style(Style::new().bg(Color::DarkGray).bold())
+        .row_highlight_style(SELECTED.bold())
         .highlight_symbol("▸")
         .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
     let mut state = TableState::new().with_selected(list.selected_index());
@@ -607,7 +610,7 @@ fn popup(frame: &mut Frame, area: Rect, width: u16, height: u16, title: &str) ->
 
 fn picker_line(text: String, selected: bool) -> Line<'static> {
     if selected {
-        Line::styled(format!("▸ {text}"), Style::new().bg(Color::DarkGray).bold())
+        Line::styled(format!("▸ {text}"), SELECTED.bold())
     } else {
         Line::raw(format!("  {text}"))
     }
@@ -642,7 +645,7 @@ fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str, at: usize
                 Span::styled(aliases, DIM),
             ]);
             if i == at {
-                line.style(Style::new().bg(Color::DarkGray))
+                line.style(SELECTED)
             } else {
                 line
             }
