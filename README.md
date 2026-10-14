@@ -20,7 +20,7 @@ cargo run --release -- lambda --profile my-sso-profile --region eu-west-1
 | `-p, --profile NAME` | AWS profile (default: `AWS_PROFILE`, else `default`, else the first profile) |
 | `-r, --region REGION` | Region (default: `AWS_REGION`, then the profile's region) |
 | `--read-only` | Never offer actions that change anything |
-| `--metrics` | Show sparklines (**billed**, see below) |
+| `--metrics` | Show sparklines (**billed**, see below): 24 hours, or the last 6 when the terminal is narrow. Their columns are hidden while sparklines are off. |
 | `--no-metrics` | No sparklines, even if the config turns them on |
 
 Credentials come from the usual AWS config: SSO (`[sso-session]` profiles; `L`
