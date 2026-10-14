@@ -360,6 +360,13 @@ pub trait ResourceKind: Send + Sync {
         None
     }
 
+    /// Whether each further page goes back in time (a log stream read from
+    /// its end). Such pages are shown above the rows already loaded, so the
+    /// list reads oldest to newest, top to bottom, and opens at the bottom.
+    fn pages_go_back(&self) -> bool {
+        false
+    }
+
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> Result<Page, AwsError>;
     async fn describe(
         &self,

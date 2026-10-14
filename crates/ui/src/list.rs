@@ -99,18 +99,27 @@ impl ListView {
         self.replace_on_next_page = true;
     }
 
-    /// Adds a page of rows. The cursor stays on the same resource ID if it's still there.
+    /// Adds a page of rows, above the others for kinds whose pages go back in
+    /// time; those start with the cursor on the newest row, at the bottom. The
+    /// cursor stays on the same resource ID if it's still there.
     pub fn push_page(&mut self, rows: Vec<Row>, last: bool) {
         let selected_id = self.selected_row().map(|r| r.id.clone());
         if std::mem::take(&mut self.replace_on_next_page) {
             self.rows.clear();
             self.cached_at = None;
         }
-        self.rows.extend(rows);
+        if self.kind.pages_go_back() {
+            self.rows.splice(0..0, rows);
+        } else {
+            self.rows.extend(rows);
+        }
         if last {
             self.status = LoadStatus::Done;
         }
         self.refilter(selected_id.as_deref());
+        if selected_id.is_none() && self.kind.pages_go_back() {
+            self.select_last();
+        }
     }
 
     /// Loading stopped at the page limit with more to fetch from `next`.
@@ -118,7 +127,7 @@ impl ListView {
         self.status = LoadStatus::More(next);
     }
 
-    /// Continues a paused load, appending to the rows already shown. Returns the
+    /// Continues a paused load, adding to the rows already shown. Returns the
     /// token to continue from.
     pub fn resume(&mut self) -> Option<String> {
         let LoadStatus::More(next) = &self.status else {
@@ -257,6 +266,38 @@ pub(crate) mod tests {
         }
     }
 
+    /// A kind whose pages go back in time, like a log stream's events.
+    struct Backwards;
+
+    #[async_trait]
+    impl ResourceKind for Backwards {
+        fn id(&self) -> &'static str {
+            "fake:event"
+        }
+        fn title(&self) -> &'static str {
+            "Events"
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            &[]
+        }
+        fn scope(&self) -> Scope {
+            Scope::Regional
+        }
+        fn columns(&self) -> &'static [Column] {
+            const COLUMNS: &[Column] = &[Column::fill("NAME", 1), Column::fixed("ID", 6)];
+            COLUMNS
+        }
+        fn pages_go_back(&self) -> bool {
+            true
+        }
+        async fn list(&self, _: &Ctx, _: &ListQuery) -> Result<Page, AwsError> {
+            Ok(Page::default())
+        }
+        async fn describe(&self, _: &Ctx, _: Option<&Parent>, _: &str) -> Result<Detail, AwsError> {
+            unreachable!()
+        }
+    }
+
     pub(crate) fn row(id: &str, name: &str) -> Row {
         Row::new(id, vec![name.into(), id.into()])
     }
@@ -321,6 +362,16 @@ pub(crate) mod tests {
         v.push_page(vec![row("c", "db"), row("d", "new")], true);
         assert_eq!(ids(&v), ["c", "d"]);
         assert_eq!(v.selected_row().unwrap().id, "c");
+    }
+
+    #[test]
+    fn older_pages_go_above_and_the_cursor_starts_at_the_newest() {
+        let mut v = ListView::new(Arc::new(Backwards), 1);
+        v.push_page(vec![row("e3", "x"), row("e4", "y")], false);
+        assert_eq!(v.selected_row().unwrap().id, "e4");
+        v.push_page(vec![row("e1", "v"), row("e2", "w")], true);
+        assert_eq!(ids(&v), ["e1", "e2", "e3", "e4"]);
+        assert_eq!(v.selected_row().unwrap().id, "e4");
     }
 
     #[test]
