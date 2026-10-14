@@ -69,7 +69,7 @@ today.
 | API Gateway | REST, HTTP and WebSocket APIs → routes with their integrations |
 | CloudFront | Distributions → invalidations |
 | DynamoDB | Tables; items by partition key |
-| RDS | Aurora clusters and DB instances (optional CPU sparkline), snapshots |
+| RDS | Aurora clusters and DB instances (optional CPU and connections sparklines), snapshots |
 | SSM Parameter Store | Parameters (SecureString values are never decrypted or shown) |
 | Secrets Manager | Secrets (values only after `v` + `reveal`) |
 | EventBridge | Buses → rules, Scheduler schedules |
@@ -84,7 +84,7 @@ data you may not want on screen. Check the current AWS prices for your region.
 
 | Feature | What it calls | Cost / impact |
 |---|---|---|
-| **Sparklines** (`--metrics`, `metrics = true`, or `,` → sparklines) | CloudWatch `GetMetricData` for up to 60 rows around the cursor, reused for 10 minutes | **Billed per metric requested.** Off by default. |
+| **Sparklines** (`--metrics`, `metrics = true`, or `,` → sparklines) | CloudWatch `GetMetricData` for up to 60 rows around the cursor, reused for 10 minutes | **Billed per metric requested** (two per RDS instance: CPU and connections). Off by default. |
 | **Cost Explorer** (`:cost`) | `GetCostAndUsage`, once per open, never refreshed on its own (`r` re-runs it) | **Billed per request** (about $0.01 each). |
 | **Logs Insights** (`I` on a log group) | `StartQuery` / `GetQueryResults`; the query is stopped if you leave the view | **Billed per GB of logs scanned.** Keep the time range short (`-15m …`). |
 | **Follow live** (`g` → follow live) | `FilterLogEvents` every 2 s, at most 2 calls a poll | Uses a shared per-account rate limit (5–25 calls/s depending on region), and puts log contents on screen. Not the billed Live Tail API. |
