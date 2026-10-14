@@ -20,7 +20,7 @@ const COLUMNS: &[Column] = &[
     Column::fixed("TIMEOUT", 7),
     Column::fixed("CODE", 9),
     Column::fixed("MODIFIED", 10),
-    Column::fixed("ERRORS 24h", 20),
+    Column::spark("ERRORS 24h", 20, "ERRORS 6h"),
 ];
 
 #[async_trait]

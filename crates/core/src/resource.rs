@@ -49,6 +49,9 @@ pub enum ColumnWidth {
 pub struct Column {
     pub title: &'static str,
     pub width: ColumnWidth,
+    /// For a sparkline column: its title when narrowed to the last few hours.
+    /// Hidden while sparklines are off.
+    pub short_title: Option<&'static str>,
 }
 
 impl Column {
@@ -56,6 +59,7 @@ impl Column {
         Self {
             title,
             width: ColumnWidth::Fixed(width),
+            short_title: None,
         }
     }
 
@@ -63,6 +67,16 @@ impl Column {
         Self {
             title,
             width: ColumnWidth::Fill(weight),
+            short_title: None,
+        }
+    }
+
+    /// A sparkline column, titled `short_title` when space is tight.
+    pub const fn spark(title: &'static str, width: u16, short_title: &'static str) -> Self {
+        Self {
+            title,
+            width: ColumnWidth::Fixed(width),
+            short_title: Some(short_title),
         }
     }
 }

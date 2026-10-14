@@ -22,7 +22,7 @@ const COLUMNS: &[Column] = &[
     Column::fixed("PUBLIC IP", 15),
     Column::fixed("AZ", 12),
     Column::fixed("AGE", 5),
-    Column::fixed("CPU 24h (peak)", 20),
+    Column::spark("CPU 24h (peak)", 20, "CPU 6h"),
 ];
 
 pub struct Instances;

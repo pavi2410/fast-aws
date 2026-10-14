@@ -72,8 +72,8 @@ const DB_COLUMNS: &[Column] = &[
     Column::fixed("STATUS", 12),
     Column::fill("ROLE", 2),
     Column::fill("ENDPOINT", 3),
-    Column::fixed("CPU 24h (peak)", 20),
-    Column::fixed("CONNS 24h (peak)", 18),
+    Column::spark("CPU 24h (peak)", 20, "CPU 6h"),
+    Column::spark("CONNS 24h (peak)", 18, "CONNS 6h"),
 ];
 
 #[async_trait]
