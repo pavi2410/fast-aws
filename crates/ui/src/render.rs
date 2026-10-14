@@ -213,25 +213,35 @@ fn status_span(list: &crate::list::ListView, status: &LoadStatus) -> Span<'stati
 
 fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
     let list = &app.list;
-    let columns = list.kind.columns();
-    let widths = column_widths(columns, area.width);
+    let (shown, short) = shown_columns(list.kind.columns(), app.metrics_enabled(), area.width);
+    let columns: Vec<_> = shown.iter().map(|(_, c)| *c).collect();
+    let widths = column_widths(&columns, area.width);
     let header = Row::new(columns.iter().map(|c| Cell::from(c.title))).style(DIM.bold());
     let rows = list.visible_rows().map(|r| {
         // A fetched sparkline replaces its cell; one being fetched shows `…`.
-        let spark = |i: usize| {
+        let spark = |i: usize, column: &fast_aws_core::Column| {
             let spec = r.metrics.iter().find(|m| m.column == i)?;
             Some(match app.sparkline(&r.id, i)? {
-                Some(points) => fast_aws_core::metrics::sparkline_in(
-                    app.display.sparkline,
-                    points,
-                    spec.summary,
-                    spec.unit,
-                ),
+                Some(points) => {
+                    let points = match column.short_title {
+                        Some(_) if short => last_hours(points),
+                        _ => points,
+                    };
+                    fast_aws_core::metrics::sparkline_in(
+                        app.display.sparkline,
+                        points,
+                        spec.summary,
+                        spec.unit,
+                    )
+                }
                 None => "…".to_owned(),
             })
         };
-        Row::new(r.cells.iter().enumerate().map(|(i, c)| {
-            match spark(i) {
+        Row::new(shown.iter().map(|(i, column)| {
+            let Some(c) = r.cells.get(*i) else {
+                return Cell::from("");
+            };
+            match spark(*i, column) {
                 // Cyan, not dim: it must stay readable on the highlighted row.
                 Some(text) => Cell::from(text).style(SPARK),
                 None => match c.time_ms {
@@ -270,11 +280,59 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
 /// The least a flexible column (usually the name) gets when space is tight.
 const MIN_FILL: u16 = 14;
 
-/// Column constraints for `width` cells. Normally fixed columns get their
-/// width and flexible ones share the rest; when that would leave a flexible
-/// column under [`MIN_FILL`], fixed columns become maximums so they shrink
-/// instead of the name disappearing.
-fn column_widths(columns: &[fast_aws_core::Column], width: u16) -> Vec<Constraint> {
+/// Hours a narrowed sparkline shows: the most recent ones.
+const SHORT_HOURS: usize = 6;
+
+/// A narrowed sparkline's width: three characters, a space and the number.
+const SHORT_SPARK: u16 = 10;
+
+/// The columns drawn in `width` cells, each with its index into a row's cells,
+/// and whether sparklines are narrowed. Sparkline columns are left out while
+/// sparklines are off, and narrowed to the last [`SHORT_HOURS`] when the full
+/// ones would squeeze the rest.
+fn shown_columns(
+    columns: &[fast_aws_core::Column],
+    metrics: bool,
+    width: u16,
+) -> (Vec<(usize, fast_aws_core::Column)>, bool) {
+    let full: Vec<_> = columns
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, c)| metrics || c.short_title.is_none())
+        .collect();
+    let fits = |shown: &[(usize, fast_aws_core::Column)]| {
+        let columns: Vec<_> = shown.iter().map(|(_, c)| *c).collect();
+        fits(&columns, width)
+    };
+    if !metrics || fits(&full) {
+        return (full, false);
+    }
+    let narrowed = full
+        .into_iter()
+        .map(|(i, c)| match c.short_title {
+            Some(title) => (
+                i,
+                fast_aws_core::Column {
+                    title,
+                    width: ColumnWidth::Fixed(SHORT_SPARK),
+                    ..c
+                },
+            ),
+            None => (i, c),
+        })
+        .collect();
+    (narrowed, true)
+}
+
+/// The most recent [`SHORT_HOURS`] of hourly points.
+fn last_hours(points: &[f64]) -> &[f64] {
+    &points[points.len().saturating_sub(SHORT_HOURS)..]
+}
+
+/// Whether fixed columns get their full width with every flexible one keeping
+/// at least [`MIN_FILL`].
+fn fits(columns: &[fast_aws_core::Column], width: u16) -> bool {
     const SPACING: u16 = 2;
     const HIGHLIGHT: u16 = 1;
     let fixed: u16 = columns
@@ -289,11 +347,21 @@ fn column_widths(columns: &[fast_aws_core::Column], width: u16) -> Vec<Constrain
         .filter(|c| matches!(c.width, ColumnWidth::Fill(_)))
         .count() as u16;
     let spacing = SPACING * columns.len().saturating_sub(1) as u16 + HIGHLIGHT;
-    let tight = fixed + spacing + MIN_FILL * fills > width;
+    fixed + spacing + MIN_FILL * fills <= width
+}
+
+/// Column constraints for `width` cells. Normally fixed columns get their
+/// width and flexible ones share the rest; when that would leave a flexible
+/// column under [`MIN_FILL`], fixed columns become maximums so they shrink
+/// instead of the name disappearing. Sparklines keep their width: cut, they
+/// lose the number at their end.
+fn column_widths(columns: &[fast_aws_core::Column], width: u16) -> Vec<Constraint> {
+    let tight = !fits(columns, width);
     columns
         .iter()
         .map(|c| match (c.width, tight) {
             (ColumnWidth::Fixed(n), false) => Constraint::Length(n),
+            (ColumnWidth::Fixed(n), true) if c.short_title.is_some() => Constraint::Length(n),
             (ColumnWidth::Fixed(n), true) => Constraint::Max(n),
             (ColumnWidth::Fill(w), false) => Constraint::Fill(w),
             (ColumnWidth::Fill(_), true) => Constraint::Min(MIN_FILL),
@@ -961,6 +1029,49 @@ mod tests {
         let tight = column_widths(WIDE, 60);
         assert_eq!(tight[0], Constraint::Min(MIN_FILL));
         assert_eq!(tight[1], Constraint::Max(40));
+    }
+
+    #[test]
+    fn sparkline_columns_hide_while_off_and_narrow_when_tight() {
+        use fast_aws_core::Column;
+        const COLUMNS: &[Column] = &[
+            Column::fill("NAME", 1),
+            Column::fixed("ID", 40),
+            Column::spark("CPU 24h (peak)", 20, "CPU 6h"),
+        ];
+        let titles = |metrics, width| {
+            let (shown, short) = shown_columns(COLUMNS, metrics, width);
+            let titles: Vec<_> = shown.iter().map(|(i, c)| (*i, c.title)).collect();
+            (titles, short)
+        };
+        assert_eq!(titles(false, 200), (vec![(0, "NAME"), (1, "ID")], false));
+        assert_eq!(
+            titles(true, 200),
+            (vec![(0, "NAME"), (1, "ID"), (2, "CPU 24h (peak)")], false)
+        );
+        assert_eq!(
+            titles(true, 70),
+            (vec![(0, "NAME"), (1, "ID"), (2, "CPU 6h")], true)
+        );
+        // Even tighter, other columns shrink; the sparkline keeps its width.
+        let (shown, _) = shown_columns(COLUMNS, true, 60);
+        let columns: Vec<_> = shown.iter().map(|(_, c)| *c).collect();
+        let widths = column_widths(&columns, 60);
+        assert_eq!(widths[1], Constraint::Max(40));
+        assert_eq!(widths[2], Constraint::Length(SHORT_SPARK));
+    }
+
+    #[test]
+    fn narrowed_sparklines_show_the_last_six_hours() {
+        let points: Vec<f64> = (0..24).map(f64::from).collect();
+        assert_eq!(last_hours(&points), [18.0, 19.0, 20.0, 21.0, 22.0, 23.0]);
+        assert_eq!(last_hours(&points[..2]), [0.0, 1.0]);
+        let text = fast_aws_core::metrics::sparkline(
+            last_hours(&points),
+            fast_aws_core::metrics::Summary::Peak,
+            "%",
+        );
+        assert!(text.chars().count() as u16 <= SHORT_SPARK, "{text}");
     }
 
     #[test]

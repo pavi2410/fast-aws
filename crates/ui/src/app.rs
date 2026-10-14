@@ -402,6 +402,11 @@ impl App {
         self.metrics_enabled = enabled;
     }
 
+    /// Whether sparklines are fetched (and their columns shown).
+    pub fn metrics_enabled(&self) -> bool {
+        self.metrics_enabled
+    }
+
     /// The fetched sparkline in a column of a row of the current list, if any:
     /// `None` when not fetched, `Some(None)` while being fetched.
     pub fn sparkline(&self, row_id: &str, column: usize) -> Option<Option<&[f64]>> {
