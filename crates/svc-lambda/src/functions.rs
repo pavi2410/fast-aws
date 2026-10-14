@@ -265,7 +265,7 @@ mod tests {
                 ""
             ]
         );
-        let metric = page.rows[0].metric.as_ref().unwrap();
+        let metric = &page.rows[0].metrics[0];
         assert_eq!((metric.name, metric.column), ("Errors", 6));
     }
 

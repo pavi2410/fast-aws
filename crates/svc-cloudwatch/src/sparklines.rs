@@ -23,7 +23,7 @@ impl MetricSource for CloudWatchMetrics {
         ctx: &Ctx,
         metrics: &[(String, MetricSpec)],
         hours: u32,
-    ) -> Result<HashMap<String, Vec<f64>>, AwsError> {
+    ) -> Result<HashMap<(String, usize), Vec<f64>>, AwsError> {
         let now = fast_aws_core::fmt::now_secs();
         fetch(&Client::new(ctx.config()), metrics, hours, now).await
     }
@@ -34,7 +34,7 @@ async fn fetch(
     metrics: &[(String, MetricSpec)],
     hours: u32,
     now: i64,
-) -> Result<HashMap<String, Vec<f64>>, AwsError> {
+) -> Result<HashMap<(String, usize), Vec<f64>>, AwsError> {
     // Whole hours, so every row's points line up.
     let end = (now / HOUR + 1) * HOUR;
     let start = end - i64::from(hours) * HOUR;
@@ -64,11 +64,11 @@ async fn fetch(
                 else {
                     continue;
                 };
-                let Some((row, _)) = chunk.get(i) else {
+                let Some((row, spec)) = chunk.get(i) else {
                     continue;
                 };
                 let series = points
-                    .entry(row.clone())
+                    .entry((row.clone(), spec.column))
                     .or_insert_with(|| vec![0.0; hours as usize]);
                 for (t, v) in result.timestamps().iter().zip(result.values()) {
                     let slot = (t.secs() - start) / HOUR;
@@ -83,9 +83,9 @@ async fn fetch(
             }
         }
         // Rows with no data at all still get a (flat) line.
-        for (row, _) in chunk {
+        for (row, spec) in chunk {
             points
-                .entry(row.clone())
+                .entry((row.clone(), spec.column))
                 .or_insert_with(|| vec![0.0; hours as usize]);
         }
     }
@@ -164,8 +164,42 @@ mod tests {
             ("idle".to_owned(), spec("idle")),
         ];
         let points = fetch(&client, &metrics, 4, now).await.unwrap();
-        assert_eq!(points["thumbs"], [0.0, 3.0, 0.0, 1.0]);
-        assert_eq!(points["idle"], [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(points[&("thumbs".to_owned(), 6)], [0.0, 3.0, 0.0, 1.0]);
+        assert_eq!(points[&("idle".to_owned(), 6)], [0.0, 0.0, 0.0, 0.0]);
         assert_eq!(rule.num_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_rows_metrics_stay_apart() {
+        let rule = mock!(Client::get_metric_data).then_output(|| {
+            GetMetricDataOutput::builder()
+                .metric_data_results(
+                    MetricDataResult::builder()
+                        .id("m0")
+                        .timestamps(DateTime::from_secs(0))
+                        .values(3.0)
+                        .build(),
+                )
+                .metric_data_results(
+                    MetricDataResult::builder()
+                        .id("m1")
+                        .timestamps(DateTime::from_secs(HOUR))
+                        .values(7.0)
+                        .build(),
+                )
+                .build()
+        });
+        let client = mock_client!(aws_sdk_cloudwatch, [&rule]);
+        let other = MetricSpec {
+            column: 7,
+            ..spec("thumbs")
+        };
+        let metrics = vec![
+            ("thumbs".to_owned(), spec("thumbs")),
+            ("thumbs".to_owned(), other),
+        ];
+        let points = fetch(&client, &metrics, 2, HOUR).await.unwrap();
+        assert_eq!(points[&("thumbs".to_owned(), 6)], [3.0, 0.0]);
+        assert_eq!(points[&("thumbs".to_owned(), 7)], [0.0, 7.0]);
     }
 }

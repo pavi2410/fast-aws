@@ -218,8 +218,9 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
     let header = Row::new(columns.iter().map(|c| Cell::from(c.title))).style(DIM.bold());
     let rows = list.visible_rows().map(|r| {
         // A fetched sparkline replaces its cell; one being fetched shows `…`.
-        let spark = r.metric.as_ref().and_then(|spec| {
-            let text = match app.sparkline(&r.id)? {
+        let spark = |i: usize| {
+            let spec = r.metrics.iter().find(|m| m.column == i)?;
+            Some(match app.sparkline(&r.id, i)? {
                 Some(points) => fast_aws_core::metrics::sparkline_in(
                     app.display.sparkline,
                     points,
@@ -227,14 +228,13 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
                     spec.unit,
                 ),
                 None => "…".to_owned(),
-            };
-            Some((spec.column, text))
-        });
+            })
+        };
         Row::new(r.cells.iter().enumerate().map(|(i, c)| {
-            match &spark {
+            match spark(i) {
                 // Cyan, not dim: it must stay readable on the highlighted row.
-                Some((column, text)) if *column == i => Cell::from(text.clone()).style(SPARK),
-                _ => match c.time_ms {
+                Some(text) => Cell::from(text).style(SPARK),
+                None => match c.time_ms {
                     Some(ms) => {
                         Cell::from(fast_aws_core::fmt::time::show_millis(ms, app.display.utc))
                             .style(tone(c.tone))
@@ -886,7 +886,7 @@ mod tests {
         app.handle_msg(Msg::Metrics {
             scope: scope.clone(),
             result: Ok(std::collections::HashMap::from([(
-                "a".to_owned(),
+                ("a".to_owned(), 1),
                 vec![0.0, 1.0, 4.0, 2.0],
             )])),
         });
@@ -932,7 +932,7 @@ mod tests {
         app.handle_msg(Msg::Metrics {
             scope: scope.clone(),
             result: Ok(std::collections::HashMap::from([(
-                "a".to_owned(),
+                ("a".to_owned(), 1),
                 vec![0.0, 1.0, 4.0, 2.0],
             )])),
         });

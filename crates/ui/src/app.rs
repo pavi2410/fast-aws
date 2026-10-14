@@ -80,7 +80,8 @@ pub struct Display {
 
 /// Profile, region and kind a sparkline request was made for.
 pub type SparkScope = (String, String, &'static str);
-type SparkKey = (String, String, &'static str, String);
+/// …then the row ID and the column its metric is drawn in.
+type SparkKey = (String, String, &'static str, String, usize);
 
 struct Spark {
     /// `None` while being fetched.
@@ -123,7 +124,7 @@ pub enum Effect {
 pub enum Msg {
     Metrics {
         scope: SparkScope,
-        result: Result<HashMap<String, Vec<f64>>, AwsError>,
+        result: Result<HashMap<(String, usize), Vec<f64>>, AwsError>,
     },
     Identity {
         generation: u64,
@@ -401,19 +402,20 @@ impl App {
         self.metrics_enabled = enabled;
     }
 
-    /// The fetched sparkline for a row of the current list, if any: `None` when
-    /// not fetched, `Some(None)` while being fetched.
-    pub fn sparkline(&self, row_id: &str) -> Option<Option<&[f64]>> {
-        let key = self.spark_key(row_id);
+    /// The fetched sparkline in a column of a row of the current list, if any:
+    /// `None` when not fetched, `Some(None)` while being fetched.
+    pub fn sparkline(&self, row_id: &str, column: usize) -> Option<Option<&[f64]>> {
+        let key = self.spark_key(row_id, column);
         self.sparks.get(&key).map(|s| s.points.as_deref())
     }
 
-    fn spark_key(&self, row_id: &str) -> SparkKey {
+    fn spark_key(&self, row_id: &str, column: usize) -> SparkKey {
         (
             self.profile.clone(),
             self.region.clone(),
             self.list.kind.id(),
             row_id.to_owned(),
+            column,
         )
     }
 
@@ -430,18 +432,18 @@ impl App {
             .visible_rows()
             .skip(from)
             .take(SPARK_BATCH)
-            .filter_map(|r| Some((r.id.clone(), r.metric.clone()?)))
-            .filter(|(id, _)| {
+            .flat_map(|r| r.metrics.iter().map(|m| (r.id.clone(), m.clone())))
+            .filter(|(id, spec)| {
                 self.sparks
-                    .get(&self.spark_key(id))
+                    .get(&self.spark_key(id, spec.column))
                     .is_none_or(|s| s.at.elapsed() > SPARK_TTL)
             })
             .collect();
         if wanted.is_empty() {
             return None;
         }
-        for (id, _) in &wanted {
-            let key = self.spark_key(id);
+        for (id, spec) in &wanted {
+            let key = self.spark_key(id, spec.column);
             self.sparks.insert(
                 key,
                 Spark {
@@ -506,8 +508,8 @@ impl App {
                 let (profile, region, kind) = scope;
                 match result {
                     Ok(points) => {
-                        for (id, series) in points {
-                            let key = (profile.clone(), region.clone(), kind, id);
+                        for ((id, column), series) in points {
+                            let key = (profile.clone(), region.clone(), kind, id, column);
                             self.sparks.insert(
                                 key,
                                 Spark {
@@ -1717,7 +1719,7 @@ pub(crate) mod tests {
             &("acme-dev".to_owned(), "eu-west-1".to_owned(), "fake:thing")
         );
         assert_eq!(metrics.len(), 1, "only rows that name a metric");
-        assert_eq!(app.sparkline("a"), Some(None), "marked as being fetched");
+        assert_eq!(app.sparkline("a", 1), Some(None), "marked as being fetched");
 
         // Moving around doesn't ask again while they're fresh.
         assert!(
@@ -1728,9 +1730,39 @@ pub(crate) mod tests {
 
         app.handle_msg(Msg::Metrics {
             scope: scope.clone(),
-            result: Ok(HashMap::from([("a".to_owned(), vec![0.0, 2.0])])),
+            result: Ok(HashMap::from([(("a".to_owned(), 1), vec![0.0, 2.0])])),
         });
-        assert_eq!(app.sparkline("a"), Some(Some(&[0.0, 2.0][..])));
+        assert_eq!(app.sparkline("a", 1), Some(Some(&[0.0, 2.0][..])));
+    }
+
+    #[test]
+    fn a_rows_sparklines_are_kept_per_column() {
+        let mut app = empty_app();
+        app.set_metrics(true);
+        let other = fast_aws_core::metrics::MetricSpec {
+            column: 0,
+            ..errors_metric("a")
+        };
+        let effects = app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![row("a", "web-1").metric(errors_metric("a")).metric(other)],
+                next: None,
+            }),
+        });
+        let [Effect::LoadMetrics { scope, metrics }] = effects.as_slice() else {
+            panic!("expected one LoadMetrics, got {effects:?}");
+        };
+        assert_eq!(metrics.len(), 2);
+        app.handle_msg(Msg::Metrics {
+            scope: scope.clone(),
+            result: Ok(HashMap::from([
+                (("a".to_owned(), 0), vec![1.0]),
+                (("a".to_owned(), 1), vec![2.0]),
+            ])),
+        });
+        assert_eq!(app.sparkline("a", 0), Some(Some(&[1.0][..])));
+        assert_eq!(app.sparkline("a", 1), Some(Some(&[2.0][..])));
     }
 
     #[test]

@@ -1,5 +1,5 @@
-//! Sparklines: a row can name one CloudWatch metric, fetched for the rows near
-//! the cursor in one batched call and drawn into one of its cells.
+//! Sparklines: a row can name CloudWatch metrics, fetched for the rows near
+//! the cursor in one batched call and each drawn into one of its cells.
 //!
 //! Fetching is billed per metric requested (`GetMetricData`), so only a window
 //! of rows is fetched, once per list, and it can be turned off.
@@ -37,14 +37,14 @@ pub struct MetricSpec {
 /// Something that can fetch metric points: the CloudWatch service crate.
 #[async_trait]
 pub trait MetricSource: Send + Sync {
-    /// Hourly points over the last `hours`, oldest first, for each row ID.
-    /// Missing hours are 0.
+    /// Hourly points over the last `hours`, oldest first, for each row ID and
+    /// the column its metric is drawn in. Missing hours are 0.
     async fn fetch(
         &self,
         ctx: &Ctx,
         metrics: &[(String, MetricSpec)],
         hours: u32,
-    ) -> Result<HashMap<String, Vec<f64>>, AwsError>;
+    ) -> Result<HashMap<(String, usize), Vec<f64>>, AwsError>;
 }
 
 /// How sparklines are drawn (`sparkline = "dots"` or `"bars"` in the config).
