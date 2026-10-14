@@ -272,6 +272,10 @@ impl ResourceKind for Events {
         palette: false,
     }
 
+    fn pages_go_back(&self) -> bool {
+        true
+    }
+
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> Result<Page, AwsError> {
         let parent = query
             .parent
@@ -304,7 +308,7 @@ fn describe_event(id: &str) -> Detail {
     }
 }
 
-/// The newest events first; each further page goes back in time.
+/// The newest events, oldest first; each further page goes back in time.
 async fn list_events(
     client: &Client,
     group: &str,
@@ -321,7 +325,7 @@ async fn list_events(
         .send()
         .await
         .map_err(AwsError::from_sdk)?;
-    let rows = out.events().iter().rev().map(event_row).collect();
+    let rows = out.events().iter().map(event_row).collect();
     // The API hands back the token it was given once there is nothing older.
     let older = out.next_backward_token.filter(|t| Some(t) != next.as_ref());
     Ok(Page { rows, next: older })
@@ -412,7 +416,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn events_are_newest_first_and_stop_when_the_token_repeats() {
+    async fn events_are_oldest_first_and_stop_when_the_token_repeats() {
         let rule = mock!(Client::get_log_events)
             .match_requests(|r| {
                 r.log_group_name() == Some("g")
@@ -442,10 +446,10 @@ mod tests {
             .await
             .unwrap();
         let messages: Vec<_> = page.rows.iter().map(|r| r.cells[1].text.as_str()).collect();
-        assert_eq!(messages, ["second x", "first"]);
-        assert_eq!(page.rows[0].cells[0].text, "1970-01-01T00:00:01Z");
+        assert_eq!(messages, ["first", "second x"]);
+        assert_eq!(page.rows[1].cells[0].text, "1970-01-01T00:00:01Z");
         assert_eq!(
-            page.rows[0].cells[0].time_ms,
+            page.rows[1].cells[0].time_ms,
             Some(1000),
             "drawn in the display zone"
         );
