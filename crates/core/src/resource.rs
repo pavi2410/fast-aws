@@ -366,6 +366,13 @@ pub trait ResourceKind: Send + Sync {
         true
     }
 
+    /// Whether this list draws its sparklines even when they're switched off.
+    /// A list that exists to show metrics returns `true`: opening it is the
+    /// opt-in (its metrics are billed like any other sparkline).
+    fn sparklines_on_open(&self) -> bool {
+        false
+    }
+
     /// For kinds that follow something live (a log tail): how often to ask for
     /// more after the first page. The list then never stops loading; each
     /// page's `next` token is where the following call continues, and leaving

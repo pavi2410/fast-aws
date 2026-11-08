@@ -85,10 +85,10 @@ fn row(f: &FunctionConfiguration) -> Row {
         ],
     )
     .metric(MetricSpec {
-        namespace: "AWS/Lambda",
-        name: "Errors",
+        namespace: "AWS/Lambda".into(),
+        name: "Errors".into(),
         dimensions: vec![(
-            "FunctionName",
+            "FunctionName".into(),
             f.function_name().unwrap_or_default().to_owned(),
         )],
         stat: "Sum",
@@ -266,7 +266,7 @@ mod tests {
             ]
         );
         let metric = &page.rows[0].metrics[0];
-        assert_eq!((metric.name, metric.column), ("Errors", 6));
+        assert_eq!((metric.name.as_str(), metric.column), ("Errors", 6));
     }
 
     #[test]

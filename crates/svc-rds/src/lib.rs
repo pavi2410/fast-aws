@@ -191,9 +191,9 @@ fn instance_row(i: &DbInstance) -> Row {
         ],
     )
     .metric(MetricSpec {
-        namespace: "AWS/RDS",
-        name: "CPUUtilization",
-        dimensions: vec![("DBInstanceIdentifier", name.to_owned())],
+        namespace: "AWS/RDS".into(),
+        name: "CPUUtilization".into(),
+        dimensions: vec![("DBInstanceIdentifier".into(), name.to_owned())],
         stat: "Average",
         summary: Summary::Peak,
         unit: "%",
@@ -201,9 +201,9 @@ fn instance_row(i: &DbInstance) -> Row {
     })
     // The hourly maximum: an average hides short bursts of connections.
     .metric(MetricSpec {
-        namespace: "AWS/RDS",
-        name: "DatabaseConnections",
-        dimensions: vec![("DBInstanceIdentifier", name.to_owned())],
+        namespace: "AWS/RDS".into(),
+        name: "DatabaseConnections".into(),
+        dimensions: vec![("DBInstanceIdentifier".into(), name.to_owned())],
         stat: "Maximum",
         summary: Summary::Peak,
         unit: "",
@@ -647,7 +647,7 @@ mod tests {
         let metrics: Vec<_> = second.rows[1]
             .metrics
             .iter()
-            .map(|m| (m.name, m.column))
+            .map(|m| (m.name.as_str(), m.column))
             .collect();
         assert_eq!(metrics, [("CPUUtilization", 6), ("DatabaseConnections", 7)]);
         assert!(

@@ -96,11 +96,11 @@ fn query(i: usize, spec: &MetricSpec) -> MetricDataQuery {
     let dimensions = spec
         .dimensions
         .iter()
-        .map(|(name, value)| Dimension::builder().name(*name).value(value).build())
+        .map(|(name, value)| Dimension::builder().name(name).value(value).build())
         .collect();
     let metric = Metric::builder()
-        .namespace(spec.namespace)
-        .metric_name(spec.name)
+        .namespace(&spec.namespace)
+        .metric_name(&spec.name)
         .set_dimensions(Some(dimensions))
         .build();
     MetricDataQuery::builder()
@@ -126,9 +126,9 @@ mod tests {
 
     fn spec(function: &str) -> MetricSpec {
         MetricSpec {
-            namespace: "AWS/Lambda",
-            name: "Errors",
-            dimensions: vec![("FunctionName", function.to_owned())],
+            namespace: "AWS/Lambda".into(),
+            name: "Errors".into(),
+            dimensions: vec![("FunctionName".into(), function.to_owned())],
             stat: "Sum",
             summary: Summary::Total,
             unit: "",

@@ -115,9 +115,12 @@ fn row(i: &Instance, now: i64) -> Row {
         ],
     )
     .metric(MetricSpec {
-        namespace: "AWS/EC2",
-        name: "CPUUtilization",
-        dimensions: vec![("InstanceId", i.instance_id().unwrap_or_default().to_owned())],
+        namespace: "AWS/EC2".into(),
+        name: "CPUUtilization".into(),
+        dimensions: vec![(
+            "InstanceId".into(),
+            i.instance_id().unwrap_or_default().to_owned(),
+        )],
         stat: "Average",
         summary: Summary::Peak,
         unit: "%",
@@ -189,6 +192,15 @@ fn relations(mut row: Row, i: &Instance) -> Row {
         i.vpc_id().unwrap_or_default(),
     )
     .relate("its volumes", "ec2:volume", id)
+    .relate_inside(
+        "metrics, incl. CloudWatch agent memory and disk",
+        "cloudwatch:metric",
+        fast_aws_core::Parent {
+            id: format!("InstanceId={id}"),
+            label: format!("{} metrics", crate::name(i.tags()).unwrap_or(id)),
+            region: None,
+        },
+    )
     .relate(
         format!("key pair {}", i.key_name().unwrap_or_default()),
         "ec2:keypair",
@@ -304,9 +316,18 @@ mod tests {
                 ("subnet subnet-1", "ec2:subnet", Some("subnet-1")),
                 ("VPC vpc-1", "ec2:vpc", Some("vpc-1")),
                 ("its volumes", "ec2:volume", Some("i-1")),
+                (
+                    "metrics, incl. CloudWatch agent memory and disk",
+                    "cloudwatch:metric",
+                    None
+                ),
                 ("key pair ops", "ec2:keypair", Some("ops")),
             ]
         );
+        // Metrics open inside the instance rather than filtering a list.
+        let metrics = &row.relations[4];
+        assert_eq!(metrics.kind, "cloudwatch:metric");
+        assert_eq!(metrics.parent.as_ref().unwrap().id, "InstanceId=i-1");
     }
 
     #[tokio::test]

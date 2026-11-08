@@ -61,7 +61,7 @@ today.
 
 | Service | What you can see |
 |---|---|
-| EC2 | Instances (with optional CPU sparkline), security groups, VPCs → subnets, subnets, EBS volumes, owned AMIs, key pairs, Elastic IPs |
+| EC2 | Instances (with optional CPU sparkline; `g` → metrics lists every metric published for the instance, including CloudWatch-agent memory and disk, each with a 24h sparkline), security groups, VPCs → subnets, subnets, EBS volumes, owned AMIs, key pairs, Elastic IPs |
 | S3 | Buckets (each in its own region) → objects by folder |
 | Lambda | Functions (with optional errors sparkline), event source mappings; follow a function's logs live |
 | CloudWatch Logs | Log groups → streams → events; follow a group live; Logs Insights |
@@ -86,6 +86,7 @@ data you may not want on screen. Check the current AWS prices for your region.
 | Feature | What it calls | Cost / impact |
 |---|---|---|
 | **Sparklines** (`--metrics`, `metrics = true`, or `,` → sparklines) | CloudWatch `GetMetricData` for up to 60 rows around the cursor, reused for 10 minutes | **Billed per metric requested** (two per RDS instance: CPU and connections). Off by default. |
+| **Resource metrics** (`g` → metrics on an instance) | `ListMetrics` (free), then `GetMetricData` for up to 60 metrics around the cursor, reused for 10 minutes | **Billed per metric requested.** Opening the list is the opt-in, so its sparklines load even with sparklines off. |
 | **Cost Explorer** (`:cost`) | `GetCostAndUsage`, once per open, never refreshed on its own (`r` re-runs it) | **Billed per request** (about $0.01 each). |
 | **Logs Insights** (`I` on a log group) | `StartQuery` / `GetQueryResults`; the query is stopped if you leave the view | **Billed per GB of logs scanned.** Keep the time range short (`-15m …`). |
 | **Follow live** (`g` → follow live) | `FilterLogEvents` every 2 s, at most 2 calls a poll | Uses a shared per-account rate limit (5–25 calls/s depending on region), and puts log contents on screen. Not the billed Live Tail API. |

@@ -22,9 +22,11 @@ pub enum Summary {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MetricSpec {
-    pub namespace: &'static str,
-    pub name: &'static str,
-    pub dimensions: Vec<(&'static str, String)>,
+    pub namespace: String,
+    pub name: String,
+    /// The exact dimension set the metric was published with: `GetMetricData`
+    /// only matches a metric whose dimensions are all given.
+    pub dimensions: Vec<(String, String)>,
     /// `Sum`, `Average`, `Maximum`, …
     pub stat: &'static str,
     pub summary: Summary,

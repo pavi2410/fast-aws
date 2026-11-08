@@ -3,8 +3,10 @@
 //! Also the source of sparkline points for other services' lists
 //! ([`CloudWatchMetrics`]); `GetMetricData` is billed per metric requested.
 
+mod metrics;
 mod sparklines;
 
+pub use metrics::Metrics;
 pub use sparklines::CloudWatchMetrics;
 
 use async_trait::async_trait;
@@ -22,6 +24,7 @@ use serde_json::{Value, json};
 /// Registers every CloudWatch resource kind.
 pub fn register(registry: &mut fast_aws_core::Registry) {
     registry.register(Alarms);
+    registry.register(Metrics);
 }
 
 pub struct Alarms;

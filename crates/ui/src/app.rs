@@ -408,18 +408,24 @@ impl App {
         effects
     }
 
-    /// Turns sparkline fetching on (the binary does, unless `--no-metrics`).
     /// Whether the config wants mouse support.
     pub fn mouse_enabled(&self) -> bool {
         self.config.mouse
     }
 
+    /// Turns sparkline fetching on (the binary does, unless `--no-metrics`).
     pub fn set_metrics(&mut self, enabled: bool) {
         self.metrics_enabled = enabled;
     }
 
-    /// Whether sparklines are fetched (and their columns shown).
+    /// Whether sparklines are fetched and their columns shown: switched on, or
+    /// the list is one that exists to show them.
     pub fn metrics_enabled(&self) -> bool {
+        self.metrics_enabled || self.list.kind.sparklines_on_open()
+    }
+
+    #[cfg(test)]
+    fn metrics_setting_for_test(&self) -> bool {
         self.metrics_enabled
     }
 
@@ -443,7 +449,8 @@ impl App {
     /// Requests sparklines for rows near the cursor that don't have fresh ones:
     /// at most [`SPARK_BATCH`] per request, since each metric is billed.
     fn sparklines_effect(&mut self) -> Option<Effect> {
-        if !self.metrics_enabled || self.list.is_loading() || !matches!(self.screen, Screen::List) {
+        if !self.metrics_enabled() || self.list.is_loading() || !matches!(self.screen, Screen::List)
+        {
             return None;
         }
         let at = self.list.selected_index().unwrap_or(0);
@@ -1705,9 +1712,9 @@ pub(crate) mod tests {
 
     pub(crate) fn errors_metric(name: &str) -> fast_aws_core::metrics::MetricSpec {
         fast_aws_core::metrics::MetricSpec {
-            namespace: "AWS/Lambda",
-            name: "Errors",
-            dimensions: vec![("FunctionName", name.to_owned())],
+            namespace: "AWS/Lambda".into(),
+            name: "Errors".into(),
+            dimensions: vec![("FunctionName".into(), name.to_owned())],
             stat: "Sum",
             summary: fast_aws_core::metrics::Summary::Total,
             unit: "",
@@ -1727,6 +1734,64 @@ pub(crate) mod tests {
             }),
         });
         (app, effects)
+    }
+
+    /// A list that exists to show metrics, like a resource's metrics list.
+    struct AlwaysMetrics;
+
+    #[async_trait::async_trait]
+    impl ResourceKind for AlwaysMetrics {
+        fn id(&self) -> &'static str {
+            "fake:always"
+        }
+        fn title(&self) -> &'static str {
+            "Always"
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            &["always"]
+        }
+        fn scope(&self) -> Scope {
+            Scope::Regional
+        }
+        fn columns(&self) -> &'static [fast_aws_core::Column] {
+            &[]
+        }
+        fn sparklines_on_open(&self) -> bool {
+            true
+        }
+        async fn list(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: &fast_aws_core::ListQuery,
+        ) -> Result<Page, AwsError> {
+            Ok(Page::default())
+        }
+        async fn describe(
+            &self,
+            _: &fast_aws_core::Ctx,
+            _: Option<&Parent>,
+            _: &str,
+        ) -> Result<Detail, AwsError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn a_metrics_list_fetches_sparklines_even_with_them_switched_off() {
+        let mut registry = Registry::default();
+        registry.register(AlwaysMetrics);
+        let kind = registry.find("always").unwrap();
+        let (mut app, _) = App::new(registry, catalog(), "p".into(), "r".into(), kind);
+        assert!(!app.metrics_setting_for_test());
+        assert!(app.metrics_enabled(), "the list asked for them");
+        let effects = app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![row("a", "mem").metric(errors_metric("a"))],
+                next: None,
+            }),
+        });
+        assert!(matches!(effects.as_slice(), [Effect::LoadMetrics { .. }]));
     }
 
     #[test]
