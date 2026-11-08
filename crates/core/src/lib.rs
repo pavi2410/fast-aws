@@ -8,6 +8,7 @@ pub mod fmt;
 pub mod metrics;
 pub mod profiles;
 pub mod resource;
+pub mod session;
 
 pub use config::{Config, Guard};
 pub use context::{CallerIdentity, ConfigFactory, Ctx, caller_identity, default_region};

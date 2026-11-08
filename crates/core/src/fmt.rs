@@ -21,6 +21,17 @@ pub fn age(now_secs: i64, then_secs: i64) -> String {
     }
 }
 
+/// Time left until something ends: `2d3h`, `3h12m`, `12m`, `<1m`, or `expired`.
+pub fn remaining(secs: i64) -> String {
+    match secs {
+        s if s <= 0 => "expired".into(),
+        s if s < 60 => "<1m".into(),
+        s if s < 3_600 => format!("{}m", s / 60),
+        s if s < 86_400 => format!("{}h{:02}m", s / 3_600, s % 3_600 / 60),
+        s => format!("{}d{}h", s / 86_400, s % 86_400 / 3_600),
+    }
+}
+
 /// [`age`] of an optional timestamp in seconds, or `-`.
 pub fn age_of(then_secs: Option<i64>) -> String {
     then_secs
@@ -117,6 +128,15 @@ mod tests {
         assert_eq!(age(100_000_000, 100_000_000 - 800 * 86_400), "2y");
         assert_eq!(age(0, 50), "0s");
         assert_eq!(age_of(None), "-");
+    }
+
+    #[test]
+    fn remaining_time_names_two_units() {
+        assert_eq!(remaining(-5), "expired");
+        assert_eq!(remaining(30), "<1m");
+        assert_eq!(remaining(12 * 60 + 5), "12m");
+        assert_eq!(remaining(3 * 3_600 + 12 * 60), "3h12m");
+        assert_eq!(remaining(2 * 86_400 + 3 * 3_600), "2d3h");
     }
 
     #[test]

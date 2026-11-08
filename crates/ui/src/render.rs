@@ -141,7 +141,9 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     ];
     let profile_zone = (spans[0].width() + spans[1].width(), spans[2].width());
     spans.extend(session);
-    spans.extend([sep(), account, sep()]);
+    spans.extend([sep(), account]);
+    spans.extend(session_left(app));
+    spans.push(sep());
     let region = Span::raw(app.region.clone());
     let region_zone = (spans.iter().map(Span::width).sum::<usize>(), region.width());
     spans.push(region);
@@ -190,6 +192,22 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         .push((at(right_x + zone_w, 7), KeyCode::Char('?')));
     drop(hits);
     draw_split(frame, area, Line::from(spans), right);
+}
+
+/// ` · 3h12m left` after the account while an SSO login is counting down:
+/// dim until the last hour, yellow then, red in the last ten minutes.
+fn session_left(app: &App) -> Option<Span<'static>> {
+    let left = app.session_expiry? - fast_aws_core::fmt::now_secs();
+    let style = match left {
+        l if l <= 600 => Style::new().fg(Color::Red),
+        l if l <= 3_600 => Style::new().fg(Color::Yellow),
+        _ => DIM,
+    };
+    let text = match left {
+        l if l <= 0 => " · session expired".to_owned(),
+        l => format!(" · {} left", fast_aws_core::fmt::remaining(l)),
+    };
+    Some(Span::styled(text, style))
 }
 
 /// Draws `left` and a right-aligned `right` on one row without overlapping; the
@@ -1063,6 +1081,37 @@ mod tests {
         assert_eq!(app.overlay, Overlay::Filter);
         mouse(&mut app, MouseEventKind::Down(MouseButton::Right), 0, 5);
         assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn the_header_counts_down_an_sso_session() {
+        let mut app = app();
+        ready(&mut app);
+        let wide = |app: &App| {
+            let mut terminal = Terminal::new(TestBackend::new(110, 4)).unwrap();
+            terminal.draw(|f| draw(f, app)).unwrap();
+            terminal.backend().buffer().clone()
+        };
+        let text = |app: &App| {
+            let buf = wide(app);
+            (0..110).map(|x| buf[(x, 0)].symbol()).collect::<String>()
+        };
+        assert!(!text(&app).contains("left"), "no session, no countdown");
+        let soon = |minutes: i64| fast_aws_core::fmt::now_secs() + minutes * 60 + 30;
+        app.session_lookup = |_| Some(fast_aws_core::fmt::now_secs() + 125 * 60 + 30);
+        app.refresh_session();
+        let header = text(&app);
+        assert!(header.contains("· 2h05m left"), "{header}");
+        // Yellow inside the last hour, red inside the last ten minutes.
+        for (minutes, color) in [(45, Color::Yellow), (5, Color::Red), (200, Color::DarkGray)] {
+            app.session_expiry = Some(soon(minutes));
+            let buf = wide(&app);
+            let at =
+                (0..109).find(|&x| buf[(x, 0)].symbol() == "l" && buf[(x + 1, 0)].symbol() == "e");
+            assert_eq!(buf[(at.unwrap(), 0)].fg, color, "{minutes} minutes");
+        }
+        app.session_expiry = Some(fast_aws_core::fmt::now_secs() - 5);
+        assert!(text(&app).contains("session expired"));
     }
 
     #[test]

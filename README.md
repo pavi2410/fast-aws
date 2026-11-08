@@ -28,6 +28,12 @@ runs `aws sso login --sso-session …` when the session expires), `aws login`
 console sessions, assume-role, `credential_process` and static keys. Profiles that
 need an MFA code aren't supported yet.
 
+For SSO sessions (`[sso-session]` profiles) the header counts down the cached login
+(`· 3h12m left`: yellow in the last hour, red in the last ten minutes), read from the
+CLI's token cache in `~/.aws/sso/cache`; only the expiry time is read. A login that
+renews itself with a refresh token shows nothing once its access token has lapsed.
+Other profile kinds show no countdown.
+
 ## Keys
 
 | Key | Does |

@@ -20,6 +20,9 @@ use tokio::task::{AbortHandle, JoinSet};
 use crate::app::{App, Effect, Msg};
 use crate::render;
 
+/// How often the session countdown is looked up and redrawn.
+const SESSION_TICK: Duration = Duration::from_secs(20);
+
 enum Input {
     Key(event::KeyEvent),
     Mouse(event::MouseEvent),
@@ -45,6 +48,9 @@ pub async fn run(
     // Kept apart from `loads` so `CancelLoads` never stops the credentials check.
     let mut identity: Option<AbortHandle> = None;
 
+    app.refresh_session();
+    let mut tick = tokio::time::interval(SESSION_TICK);
+    tick.tick().await;
     let mut pending = initial;
     'main: loop {
         for effect in std::mem::take(&mut pending) {
@@ -118,7 +124,15 @@ pub async fn run(
         }
 
         terminal.draw(|f| render::draw(f, &app))?;
-        pending = match rx.recv().await {
+        let input = tokio::select! {
+            input = rx.recv() => input,
+            // Keeps the session countdown moving while nothing else happens.
+            _ = tick.tick() => {
+                app.refresh_session();
+                Some(Input::Redraw)
+            }
+        };
+        pending = match input {
             Some(Input::Key(key)) => {
                 app.mouse_pos = None;
                 app.handle_key(key)

@@ -224,6 +224,10 @@ pub struct App {
     last_click: Option<(Instant, usize)>,
     /// Whether a program is installed; replaced in tests.
     pub on_path: fn(&str) -> bool,
+    /// When the profile's login session ends (Unix seconds); see [`App::refresh_session`].
+    pub session_expiry: Option<i64>,
+    /// How to look the expiry up; replaced in tests.
+    pub session_lookup: fn(&ProfileInfo) -> Option<i64>,
     cache: Cache,
     metrics_enabled: bool,
     sparks: HashMap<SparkKey, Spark>,
@@ -263,6 +267,8 @@ impl App {
             mouse_pos: None,
             last_click: None,
             on_path: crate::runtime::on_path,
+            session_expiry: None,
+            session_lookup: ProfileInfo::session_expiry,
             metrics_enabled: false,
             sparks: HashMap::new(),
             config: Config::default(),
@@ -370,6 +376,12 @@ impl App {
         let g = self.next_generation;
         self.next_generation += 1;
         g
+    }
+
+    /// Looks the session expiry up again: on a profile switch, after a login,
+    /// and every so often while running.
+    pub fn refresh_session(&mut self) {
+        self.session_expiry = self.current_profile().and_then(self.session_lookup);
     }
 
     pub fn current_profile(&self) -> Option<&ProfileInfo> {
@@ -1170,6 +1182,7 @@ impl App {
         self.screen = Screen::List;
         let mut effects = vec![Effect::CancelLoads];
         if identity_too {
+            self.refresh_session();
             self.identity_generation += 1;
             self.identity = IdentityState::Loading;
             effects.push(Effect::LoadIdentity {
