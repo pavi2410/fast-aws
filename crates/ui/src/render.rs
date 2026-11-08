@@ -318,7 +318,7 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
     let table = Table::new(rows, widths)
         .header(header)
         .column_spacing(2)
-        .row_highlight_style(SELECTED.bold())
+        .row_highlight_style(SELECTED)
         .highlight_symbol("▸")
         .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
     let mut state = TableState::new().with_selected(list.selected_index());
