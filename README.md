@@ -101,7 +101,7 @@ startup, so typos don't go unnoticed.
 read_only = true          # every profile (or --read-only)
 metrics = true            # sparklines; billed (or --metrics)
 sparkline = "bars"        # or "dots" (the default)
-borders = true            # frame lists and details
+borders = false           # drop the frames around lists and details (on by default)
 timezone = "utc"          # or "local" (the default); Z switches in the app
 
 [profiles.my-readonly-profile]

@@ -5,7 +5,7 @@
 //! read_only = true             # every profile
 //! metrics = true               # sparklines (GetMetricData is billed per metric)
 //! sparkline = "bars"           # or "dots" (the default)
-//! borders = true               # frame lists and details
+//! borders = false              # drop the frames around lists and details (on by default)
 //! timezone = "utc"             # or "local" (the default); Z switches in the app
 //!
 //! [profiles.generex-qa-ro]
@@ -22,7 +22,7 @@ use serde::Deserialize;
 
 use crate::resource::Safety;
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Read-only for every profile.
@@ -35,8 +35,8 @@ pub struct Config {
     /// `"dots"` (default) or `"bars"`.
     #[serde(default)]
     pub sparkline: crate::metrics::SparkStyle,
-    /// Draw lists and details inside a frame.
-    #[serde(default)]
+    /// Draw lists and details inside a frame (on by default).
+    #[serde(default = "default_borders")]
     pub borders: bool,
     /// Show timestamps in `"local"` time (the default) or `"utc"`; `Z` in the
     /// app switches.
@@ -44,6 +44,23 @@ pub struct Config {
     pub timezone: TimeZoneSetting,
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfig>,
+}
+
+fn default_borders() -> bool {
+    true
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            read_only: false,
+            metrics: None,
+            sparkline: Default::default(),
+            borders: default_borders(),
+            timezone: Default::default(),
+            profiles: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -169,9 +186,10 @@ mod tests {
 
     #[test]
     fn display_options() {
-        let config = parse("sparkline = \"bars\"\nborders = true");
+        let config = parse("sparkline = \"bars\"\nborders = false");
         assert_eq!(config.sparkline, crate::metrics::SparkStyle::Bars);
-        assert!(config.borders);
+        assert!(!config.borders);
+        assert!(Config::default().borders);
         assert_eq!(
             Config::default().sparkline,
             crate::metrics::SparkStyle::Dots
