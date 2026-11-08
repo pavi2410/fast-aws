@@ -94,17 +94,22 @@ pub async fn run(
                         let _ = tx.send(Input::Msg(Msg::Metrics { scope, result }));
                     });
                 }
-                Effect::RunInTerminal(command) => {
+                Effect::RunInTerminal { command, reload } => {
                     input.pause();
                     capture_mouse(false);
                     ratatui::restore();
                     let success = run_command(&command).await;
+                    if !success {
+                        // Otherwise the TUI redraws over whatever it printed.
+                        wait_for_enter().await;
+                    }
                     resume_terminal(&mut terminal)?;
                     if mouse {
                         capture_mouse(true);
                     }
                     input.resume();
-                    pending.extend(app.handle_msg(Msg::TerminalCommandFinished { success }));
+                    pending
+                        .extend(app.handle_msg(Msg::TerminalCommandFinished { success, reload }));
                 }
             }
         }
@@ -278,7 +283,38 @@ async fn run_command(command: &[String]) -> bool {
     }
 }
 
-/// Re-enters the TUI after [`run_command`], without installing another panic hook.
+/// Whether `program` is an executable file in a `PATH` directory.
+pub fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|dir| {
+            let file = dir.join(program);
+            file.is_file() && is_executable(&file)
+        })
+    })
+}
+
+#[cfg(unix)]
+fn is_executable(file: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    file.metadata()
+        .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(_: &std::path::Path) -> bool {
+    true
+}
+
+/// After a failed command, holds the screen until Enter so its output can be read.
+async fn wait_for_enter() {
+    println!("\n[command failed; press Enter to return]");
+    let _ = tokio::task::spawn_blocking(|| {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)
+    })
+    .await;
+}
+
 /// Turns mouse reporting on or off. Off is safe to repeat; it also runs from a
 /// panic hook so a crash doesn't leave the shell printing escape codes.
 fn capture_mouse(on: bool) {
@@ -304,6 +340,7 @@ fn install_panic_hook() {
     }
 }
 
+/// Re-enters the TUI after [`run_command`], without installing another panic hook.
 fn resume_terminal(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
     enable_raw_mode()?;
     io::stdout()

@@ -627,6 +627,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             r.queries
                 .iter()
                 .map(|q| (q.key.to_string(), q.label))
+                .chain(r.commands.iter().map(|c| (c.key.to_string(), c.label)))
                 .collect()
         })
         .unwrap_or_default();

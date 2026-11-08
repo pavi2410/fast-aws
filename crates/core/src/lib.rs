@@ -14,5 +14,5 @@ pub use context::{CallerIdentity, ConfigFactory, Ctx, caller_identity, default_r
 pub use error::{AwsError, ErrorKind};
 pub use resource::{
     Cell, Column, ColumnWidth, Detail, Drill, ListQuery, Page, Parent, Query, Registry, Relation,
-    ResourceKind, Row, Safety, Scope, Tone,
+    ResourceKind, Row, RowCommand, Safety, Scope, Tone,
 };

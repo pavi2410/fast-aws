@@ -49,6 +49,7 @@ Some rows have keys of their own, shown at the left of the footer:
 
 | Key | On | Does |
 |---|---|---|
+| `s` | Running EC2 instance | Open a shell (`aws ssm start-session`; needs the AWS CLI, the Session Manager plugin and the SSM agent on the instance). Counts as a side effect: allowed in read-only mode, locked on a prod profile until `:unlock`. |
 | `S` | IAM role or user | Simulate "can it do X?" |
 | `I` | Log group | Logs Insights query (**billed**) |
 | `Q` | DynamoDB table | Look up items by partition key |

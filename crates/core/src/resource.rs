@@ -202,6 +202,21 @@ impl Query {
     }
 }
 
+/// A key on a row that runs a program in the user's terminal (an SSM shell).
+/// `{profile}` and `{region}` in `argv` become the app's current ones.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowCommand {
+    pub key: char,
+    /// A word or two for the footer's key hints, e.g. `shell`.
+    pub label: &'static str,
+    pub safety: Safety,
+    pub argv: Vec<String>,
+    /// Programs that must be on `PATH`, each with what to tell the user if not.
+    pub needs: Vec<(&'static str, &'static str)>,
+    /// Why the command can't run on this row right now (the key says so).
+    pub unavailable: Option<&'static str>,
+}
+
 /// One line in a resource list: a stable ID plus one cell per column.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
@@ -218,6 +233,8 @@ pub struct Row {
     pub queries: Vec<Query>,
     /// Metrics to draw as sparklines, each in its own cell.
     pub metrics: Vec<crate::metrics::MetricSpec>,
+    /// Programs this row can run in the terminal.
+    pub commands: Vec<RowCommand>,
 }
 
 impl Row {
@@ -230,7 +247,14 @@ impl Row {
             relations: Vec::new(),
             queries: Vec::new(),
             metrics: Vec::new(),
+            commands: Vec::new(),
         }
+    }
+
+    /// Lets a key on this row run a program in the terminal.
+    pub fn command(mut self, command: RowCommand) -> Self {
+        self.commands.push(command);
+        self
     }
 
     /// Draws `metric` as a sparkline in its cell, once fetched.

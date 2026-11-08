@@ -5,7 +5,8 @@ use aws_sdk_ec2::Client;
 use aws_sdk_ec2::types::{Filter, Instance, InstanceStateName};
 use fast_aws_core::metrics::{MetricSpec, Summary};
 use fast_aws_core::{
-    AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, Scope, Tone,
+    AwsError, Cell, Column, Ctx, Detail, ListQuery, Page, Parent, ResourceKind, Row, RowCommand,
+    Safety, Scope, Tone,
 };
 use serde_json::{Value, json};
 
@@ -65,7 +66,7 @@ async fn list(client: &Client, query: &ListQuery) -> Result<Page, AwsError> {
         .reservations()
         .iter()
         .flat_map(|r| r.instances())
-        .map(|i| relations(row(i, now), i))
+        .map(|i| shell(relations(row(i, now), i), i))
         .collect();
     Ok(Page {
         rows,
@@ -167,6 +168,43 @@ fn fields(i: &Instance) -> Value {
         "Architecture": i.architecture().map(|a| a.as_str()),
         "PlatformDetails": i.platform_details(),
         "Tags": crate::tags(i.tags()),
+    })
+}
+
+/// `s`: a shell on the instance through Session Manager. It runs `aws ssm
+/// start-session`, so it needs the AWS CLI and the Session Manager plugin, and
+/// an instance that is running with the SSM agent registered.
+///
+/// A shell can do anything the instance's role allows, so it is a
+/// `SideEffect`: offered in read-only mode, but locked on a prod profile until
+/// `:unlock`.
+fn shell(row: Row, i: &Instance) -> Row {
+    let running = i.state().and_then(|s| s.name()) == Some(&InstanceStateName::Running);
+    row.command(RowCommand {
+        key: 's',
+        label: "shell",
+        safety: Safety::SideEffect,
+        argv: [
+            "aws",
+            "ssm",
+            "start-session",
+            "--target",
+            i.instance_id().unwrap_or_default(),
+            "--profile",
+            "{profile}",
+            "--region",
+            "{region}",
+        ]
+        .map(String::from)
+        .to_vec(),
+        needs: vec![
+            ("aws", "the AWS CLI isn't installed (needed for the shell)"),
+            (
+                "session-manager-plugin",
+                "install the Session Manager plugin for the AWS CLI to open a shell",
+            ),
+        ],
+        unavailable: (!running).then_some("the instance isn't running"),
     })
 }
 
@@ -328,6 +366,35 @@ mod tests {
         let metrics = &row.relations[4];
         assert_eq!(metrics.kind, "cloudwatch:metric");
         assert_eq!(metrics.parent.as_ref().unwrap().id, "InstanceId=i-1");
+    }
+
+    #[test]
+    fn s_opens_an_ssm_shell_on_running_instances_only() {
+        let instance = |state| {
+            Instance::builder()
+                .instance_id("i-1")
+                .state(
+                    aws_sdk_ec2::types::InstanceState::builder()
+                        .name(state)
+                        .build(),
+                )
+                .build()
+        };
+        let running = instance(InstanceStateName::Running);
+        let command = &shell(row(&running, 0), &running).commands[0];
+        assert_eq!((command.key, command.safety), ('s', Safety::SideEffect));
+        assert_eq!(
+            command.argv[..5],
+            ["aws", "ssm", "start-session", "--target", "i-1"]
+        );
+        assert!(command.argv.contains(&"{profile}".to_owned()));
+        assert!(command.unavailable.is_none());
+        let tools: Vec<_> = command.needs.iter().map(|(t, _)| *t).collect();
+        assert_eq!(tools, ["aws", "session-manager-plugin"]);
+
+        let stopped = instance(InstanceStateName::Stopped);
+        let command = &shell(row(&stopped, 0), &stopped).commands[0];
+        assert_eq!(command.unavailable, Some("the instance isn't running"));
     }
 
     #[tokio::test]

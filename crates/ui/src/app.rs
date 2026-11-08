@@ -113,7 +113,12 @@ pub enum Effect {
     /// Abort every running list and detail load (the view or context changed).
     CancelLoads,
     /// Suspend the TUI and run this command (SSO login) in the terminal.
-    RunInTerminal(Vec<String>),
+    RunInTerminal {
+        command: Vec<String>,
+        /// Start over (reload the profile's lists and identity) afterwards, as
+        /// after an SSO login. A shell leaves everything as it was.
+        reload: bool,
+    },
     /// Fetch sparkline points for these rows (billed per metric).
     LoadMetrics {
         scope: SparkScope,
@@ -148,6 +153,7 @@ pub enum Msg {
     },
     TerminalCommandFinished {
         success: bool,
+        reload: bool,
     },
 }
 
@@ -216,6 +222,8 @@ pub struct App {
     /// The mouse pointer's last position, for hover highlights.
     pub mouse_pos: Option<(u16, u16)>,
     last_click: Option<(Instant, usize)>,
+    /// Whether a program is installed; replaced in tests.
+    pub on_path: fn(&str) -> bool,
     cache: Cache,
     metrics_enabled: bool,
     sparks: HashMap<SparkKey, Spark>,
@@ -254,6 +262,7 @@ impl App {
             hits: Default::default(),
             mouse_pos: None,
             last_click: None,
+            on_path: crate::runtime::on_path,
             metrics_enabled: false,
             sparks: HashMap::new(),
             config: Config::default(),
@@ -552,11 +561,13 @@ impl App {
                     Err(e) => self.flash = Some(format!("sparklines unavailable: {e}")),
                 }
             }
-            Msg::TerminalCommandFinished { success } => {
+            Msg::TerminalCommandFinished { success, reload } => {
                 if !success {
-                    self.flash = Some("login command failed; see its output above".into());
+                    self.flash = Some("the command failed; see its output above".into());
                 }
-                return self.reload_context(true);
+                if reload {
+                    return self.reload_context(true);
+                }
             }
             // From a load that was replaced.
             Msg::Identity { .. } | Msg::Page { .. } | Msg::Paused { .. } => {}
@@ -699,11 +710,50 @@ impl App {
                     .and_then(|r| r.queries.iter().find(|q| q.key == c));
                 if let Some(query) = query.cloned() {
                     self.overlay = Overlay::Prompt(query, String::new());
+                } else if let Some(command) = self
+                    .list
+                    .selected_row()
+                    .and_then(|r| r.commands.iter().find(|k| k.key == c))
+                    .cloned()
+                {
+                    return self.run_row_command(command);
                 }
             }
             _ => {}
         }
         Vec::new()
+    }
+
+    /// Runs a row's program in the terminal, if the profile allows it and the
+    /// programs it needs are installed.
+    fn run_row_command(&mut self, command: fast_aws_core::RowCommand) -> Vec<Effect> {
+        if let Some(why) = command.unavailable {
+            self.flash = Some(format!("can't open a {}: {why}", command.label));
+            return Vec::new();
+        }
+        if !self.guard.allows(command.safety) {
+            self.flash = Some(format!(
+                "{} is locked on {}: :unlock allows it for this session",
+                command.label, self.profile
+            ));
+            return Vec::new();
+        }
+        if let Some((_, hint)) = command.needs.iter().find(|(tool, _)| !(self.on_path)(tool)) {
+            self.flash = Some((*hint).to_owned());
+            return Vec::new();
+        }
+        let argv = command
+            .argv
+            .iter()
+            .map(|a| {
+                a.replace("{profile}", &self.profile)
+                    .replace("{region}", &self.region)
+            })
+            .collect();
+        vec![Effect::RunInTerminal {
+            command: argv,
+            reload: false,
+        }]
     }
 
     fn prompt_key(&mut self, key: KeyEvent, query: Query, mut input: String) -> Vec<Effect> {
@@ -1132,7 +1182,10 @@ impl App {
 
     fn login(&mut self) -> Vec<Effect> {
         match self.current_profile().and_then(ProfileInfo::login_command) {
-            Some(command) => vec![Effect::RunInTerminal(command)],
+            Some(command) => vec![Effect::RunInTerminal {
+                command,
+                reload: true,
+            }],
             None => {
                 self.flash = Some(format!(
                     "profile {} doesn't use SSO or aws login; nothing to log in to",
@@ -2185,13 +2238,17 @@ pub(crate) mod tests {
         let effects = press(&mut app, "L");
         assert_eq!(
             effects,
-            [Effect::RunInTerminal(
-                ["aws", "sso", "login", "--sso-session", "acme"]
+            [Effect::RunInTerminal {
+                command: ["aws", "sso", "login", "--sso-session", "acme"]
                     .map(String::from)
-                    .to_vec()
-            )]
+                    .to_vec(),
+                reload: true,
+            }]
         );
-        let effects = app.handle_msg(Msg::TerminalCommandFinished { success: true });
+        let effects = app.handle_msg(Msg::TerminalCommandFinished {
+            success: true,
+            reload: true,
+        });
         assert_eq!(
             effects,
             [
@@ -2203,6 +2260,114 @@ pub(crate) mod tests {
                 }
             ]
         );
+    }
+
+    fn shell_row(running: bool) -> Row {
+        row("i-1", "web-1").command(fast_aws_core::RowCommand {
+            key: 's',
+            label: "shell",
+            safety: fast_aws_core::Safety::SideEffect,
+            argv: [
+                "aws",
+                "ssm",
+                "start-session",
+                "--target",
+                "i-1",
+                "--profile",
+            ]
+            .into_iter()
+            .chain(["{profile}", "--region", "{region}"])
+            .map(String::from)
+            .collect(),
+            needs: vec![("session-manager-plugin", "install the plugin")],
+            unavailable: (!running).then_some("the instance isn't running"),
+        })
+    }
+
+    fn app_with_shell(running: bool) -> App {
+        let mut app = empty_app();
+        app.on_path = |_| true;
+        app.handle_msg(Msg::Page {
+            generation: 1,
+            result: Ok(Page {
+                rows: vec![shell_row(running)],
+                next: None,
+            }),
+        });
+        app
+    }
+
+    #[test]
+    fn s_runs_a_shell_in_the_terminal_as_this_profile_and_region() {
+        let mut app = app_with_shell(true);
+        let effects = press(&mut app, "s");
+        assert_eq!(
+            effects,
+            [Effect::RunInTerminal {
+                command: [
+                    "aws",
+                    "ssm",
+                    "start-session",
+                    "--target",
+                    "i-1",
+                    "--profile",
+                    "acme-dev",
+                    "--region",
+                    "eu-west-1"
+                ]
+                .map(String::from)
+                .to_vec(),
+                reload: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn finishing_a_shell_keeps_the_view_as_it_was() {
+        let mut app = app_with_shell(true);
+        press(&mut app, "d");
+        assert!(matches!(app.screen, Screen::Detail(_)));
+        let effects = app.handle_msg(Msg::TerminalCommandFinished {
+            success: true,
+            reload: false,
+        });
+        assert!(effects.is_empty());
+        assert!(matches!(app.screen, Screen::Detail(_)));
+        assert_eq!(app.list.total(), 1);
+        // A failure only says so.
+        app.handle_msg(Msg::TerminalCommandFinished {
+            success: false,
+            reload: false,
+        });
+        assert!(app.flash.as_deref().unwrap().contains("failed"));
+        assert_eq!(app.list.total(), 1);
+    }
+
+    #[test]
+    fn a_shell_needs_a_running_instance_and_the_plugin() {
+        let mut app = app_with_shell(false);
+        assert!(press(&mut app, "s").is_empty());
+        assert!(app.flash.as_deref().unwrap().contains("isn't running"));
+
+        let mut app = app_with_shell(true);
+        app.on_path = |tool| tool != "session-manager-plugin";
+        assert!(press(&mut app, "s").is_empty());
+        assert_eq!(app.flash.as_deref(), Some("install the plugin"));
+    }
+
+    #[test]
+    fn a_shell_is_locked_on_a_prod_profile_until_unlocked() {
+        let mut app = app_with_shell(true);
+        app.guard.prod = true;
+        assert!(press(&mut app, "s").is_empty());
+        assert!(app.flash.as_deref().unwrap().contains(":unlock"));
+        press(&mut app, ":unlock");
+        app.handle_key(key(KeyCode::Enter));
+        let effects = press(&mut app, "s");
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::RunInTerminal { reload: false, .. }]
+        ));
     }
 
     #[test]
