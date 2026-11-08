@@ -3,14 +3,15 @@
 use fast_aws_core::profiles::Auth;
 use fast_aws_core::{AwsError, ColumnWidth, ErrorKind, Scope, Tone};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Cell, Clear, Paragraph, Row, Table, TableState, Wrap};
 
-use crate::app::{App, IdentityState, Overlay, PickerEntry, REGIONS, Screen};
+use crate::app::{App, Hits, IdentityState, Overlay, PickerEntry, REGIONS, Screen};
 use crate::detail::{self, DetailState, DetailView};
 use crate::list::LoadStatus;
+use ratatui::crossterm::event::KeyCode;
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Style = Style::new().fg(Color::DarkGray);
@@ -18,6 +19,8 @@ const SPARK: Style = Style::new().fg(Color::Cyan);
 /// The selected row: a faint background (256-colour grey #303030), darker
 /// than `DIM` text so dim cells and sparklines stay readable on it.
 const SELECTED: Style = Style::new().bg(Color::Indexed(236));
+/// A row or item under the mouse pointer (selection is #303030).
+const HOVER: Style = Style::new().bg(Color::Indexed(235));
 const KEY: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 
 fn tone(t: Tone) -> Style {
@@ -39,6 +42,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     ])
     .areas(frame.area());
 
+    *app.hits.borrow_mut() = Hits {
+        title,
+        ..Hits::default()
+    };
     draw_header(frame, header, app);
     match &app.screen {
         Screen::List => {
@@ -66,8 +73,42 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Overlay::Profiles(at) => draw_profiles(frame, body, app, *at),
         Overlay::Regions(at) => draw_regions(frame, body, app, *at),
         Overlay::Relations(at) => draw_relations(frame, body, app, *at),
-        Overlay::Help => draw_help(frame, body),
+        Overlay::Help => draw_help(frame, app, body),
         Overlay::Settings(at) => draw_settings(frame, body, app, *at),
+    }
+    draw_hover(frame, app);
+}
+
+/// Highlights what the mouse pointer is over, after everything is drawn: a
+/// label is underlined, a row or popup item gets a faint background.
+fn draw_hover(frame: &mut Frame, app: &App) {
+    let Some((x, y)) = app.mouse_pos else {
+        return;
+    };
+    let pos = Position::new(x, y);
+    let zone = app
+        .hits
+        .borrow()
+        .zones
+        .iter()
+        .find(|(r, _)| r.contains(pos))
+        .map(|(r, _)| *r);
+    if let Some(rect) = zone {
+        frame
+            .buffer_mut()
+            .set_style(rect, Style::new().add_modifier(Modifier::UNDERLINED));
+        return;
+    }
+    let h = app.hits.borrow();
+    let row = if let Some(index) = app.table_target(pos) {
+        (Some(index) != h.table_selected).then_some(Rect::new(h.table.x, y, h.table.width, 1))
+    } else if let Some(index) = app.overlay_target(pos) {
+        (Some(index) != app.overlay_cursor()).then_some(Rect::new(h.list.x, y, h.list.width, 1))
+    } else {
+        None
+    };
+    if let Some(rect) = row {
+        frame.buffer_mut().set_style(rect, HOVER);
     }
 }
 
@@ -98,8 +139,12 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw(" "),
         Span::styled(app.profile.clone(), Style::new().bold()),
     ];
+    let profile_zone = (spans[0].width() + spans[1].width(), spans[2].width());
     spans.extend(session);
-    spans.extend([sep(), account, sep(), Span::raw(app.region.clone())]);
+    spans.extend([sep(), account, sep()]);
+    let region = Span::raw(app.region.clone());
+    let region_zone = (spans.iter().map(Span::width).sum::<usize>(), region.width());
+    spans.push(region);
     if app.guard.prod {
         let text = if app.guard.unlocked {
             " PROD · unlocked "
@@ -131,6 +176,19 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled(" ? ", KEY),
         Span::styled("help ", DIM),
     ]);
+    // Clickable labels: profile (P), region (R), time zone (Z), help (?).
+    let right_x = area.x + area.width.saturating_sub(right.width() as u16);
+    let zone_w = right.spans[0].width() as u16;
+    let at = |x: u16, w: u16| Rect::new(x, area.y, w, 1).intersection(area);
+    let mut hits = app.hits.borrow_mut();
+    let left = |(x, w): (usize, usize)| at(area.x + x as u16, w as u16);
+    hits.zones.push((left(profile_zone), KeyCode::Char('P')));
+    hits.zones.push((left(region_zone), KeyCode::Char('R')));
+    hits.zones
+        .push((at(right_x + 2, zone_w - 3), KeyCode::Char('Z')));
+    hits.zones
+        .push((at(right_x + zone_w, 7), KeyCode::Char('?')));
+    drop(hits);
     draw_split(frame, area, Line::from(spans), right);
 }
 
@@ -265,6 +323,17 @@ fn draw_table(frame: &mut Frame, area: Rect, app: &App) {
         .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
     let mut state = TableState::new().with_selected(list.selected_index());
     frame.render_stateful_widget(table, area, &mut state);
+    {
+        let mut hits = app.hits.borrow_mut();
+        hits.table = Rect::new(
+            area.x,
+            area.y + 1,
+            area.width,
+            area.height.saturating_sub(1),
+        );
+        hits.table_offset = state.offset();
+        hits.table_selected = list.selected_index();
+    }
 
     if list.total() > 0 && list.visible_rows().len() == 0 {
         let msg = Paragraph::new(format!("nothing matches /{}", list.filter)).style(DIM);
@@ -495,26 +564,57 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App, d: &DetailView) {
     frame.render_widget(Paragraph::new(text).scroll((d.scroll, 0)), area);
 }
 
-fn hints(pairs: &[(&'static str, &'static str)]) -> Line<'static> {
-    hints_with(pairs, &[])
+fn hints(
+    pairs: &[(&'static str, &'static str)],
+    zones: &mut Vec<(u16, u16, KeyCode)>,
+) -> Line<'static> {
+    hints_with(pairs, &[], zones)
+}
+
+/// The key a footer hint's label stands for, when a click can press it.
+fn hint_key(label: &str) -> Option<KeyCode> {
+    match label {
+        "enter" => Some(KeyCode::Enter),
+        "esc" => Some(KeyCode::Esc),
+        "tab" => Some(KeyCode::Tab),
+        _ => {
+            let mut chars = label.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) => Some(KeyCode::Char(c)),
+                _ => None,
+            }
+        }
+    }
 }
 
 /// Key hints, after the selected row's own keys (`S simulate`).
 fn hints_with(
     pairs: &[(&'static str, &'static str)],
     row_keys: &[(String, &'static str)],
+    zones: &mut Vec<(u16, u16, KeyCode)>,
 ) -> Line<'static> {
     let mut spans = vec![Span::raw(" ")];
+    let mut x = 1usize;
+    let mut push = |spans: &mut Vec<Span<'static>>, key: Span<'static>, label: Span<'static>| {
+        // The trailing two spaces of the label aren't part of the click target.
+        let width = key.width() + label.width() - 2;
+        if let Some(code) = hint_key(&key.content) {
+            zones.push((x as u16, width as u16, code));
+        }
+        x += key.width() + label.width();
+        spans.push(key);
+        spans.push(label);
+    };
     for (key, label) in row_keys {
-        spans.push(Span::styled(
-            key.clone(),
-            KEY.add_modifier(Modifier::REVERSED),
-        ));
-        spans.push(Span::styled(format!(" {label}  "), DIM));
+        let key = Span::styled(key.clone(), KEY.add_modifier(Modifier::REVERSED));
+        push(&mut spans, key, Span::styled(format!(" {label}  "), DIM));
     }
     for (key, label) in pairs {
-        spans.push(Span::styled(*key, KEY));
-        spans.push(Span::styled(format!(" {label}  "), DIM));
+        push(
+            &mut spans,
+            Span::styled(*key, KEY),
+            Span::styled(format!(" {label}  "), DIM),
+        );
     }
     Line::from(spans)
 }
@@ -530,6 +630,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
                 .collect()
         })
         .unwrap_or_default();
+    let mut zones = Vec::new();
     let line = match (&app.overlay, &app.flash) {
         (Overlay::Prompt(query, input), _) => Line::from(vec![
             Span::styled(format!(" {}: ", query.prompt), KEY),
@@ -550,7 +651,10 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("   enter keep · esc clear", DIM),
         ]),
         (_, Some(flash)) => Line::styled(format!(" {flash}"), Style::new().fg(Color::Yellow)),
-        _ if app.login_would_help() => hints(&[("L", "log in"), ("P", "profile"), ("q", "quit")]),
+        _ if app.login_would_help() => hints(
+            &[("L", "log in"), ("P", "profile"), ("q", "quit")],
+            &mut zones,
+        ),
         _ => match app.screen {
             Screen::List if !app.back.is_empty() => hints_with(
                 &[
@@ -562,6 +666,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
                     (":", "jump"),
                 ],
                 &row_keys,
+                &mut zones,
             ),
             Screen::List => hints_with(
                 &[
@@ -576,20 +681,29 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
                     ("q", "quit"),
                 ],
                 &row_keys,
+                &mut zones,
             ),
-            Screen::Detail(_) => hints(&[
-                ("j/k", "scroll"),
-                ("tab", "fields/raw"),
-                ("r", "refresh"),
-                ("esc", "back"),
-            ]),
+            Screen::Detail(_) => hints(
+                &[
+                    ("j/k", "scroll"),
+                    ("tab", "fields/raw"),
+                    ("r", "refresh"),
+                    ("esc", "back"),
+                ],
+                &mut zones,
+            ),
         },
     };
     frame.render_widget(line, area);
+    app.hits.borrow_mut().zones.extend(
+        zones
+            .into_iter()
+            .map(|(x, w, code)| (Rect::new(area.x + x, area.y, w, 1).intersection(area), code)),
+    );
 }
 
 /// A bordered box centred in `area`, cleared, with `title`.
-fn popup(frame: &mut Frame, area: Rect, width: u16, height: u16, title: &str) -> Rect {
+fn popup(frame: &mut Frame, app: &App, area: Rect, width: u16, height: u16, title: &str) -> Rect {
     let w = width.min(area.width);
     let h = height.min(area.height);
     let rect = Rect::new(
@@ -605,7 +719,15 @@ fn popup(frame: &mut Frame, area: Rect, width: u16, height: u16, title: &str) ->
         .title(format!(" {title} "));
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
+    app.hits.borrow_mut().popup = Some(rect);
     inner
+}
+
+/// Records where a popup's item lines are, for the mouse.
+fn record_list(app: &App, inner: Rect, offset: u16) {
+    let mut hits = app.hits.borrow_mut();
+    hits.list = inner;
+    hits.list_offset = usize::from(offset);
 }
 
 fn picker_line(text: String, selected: bool) -> Line<'static> {
@@ -648,10 +770,11 @@ fn draw_palette(frame: &mut Frame, area: Rect, app: &App, input: &str, at: usize
         })
         .collect();
     let height = lines.len().clamp(1, 14) as u16 + 2;
-    let inner = popup(frame, area, 80, height, "jump to");
+    let inner = popup(frame, app, area, 80, height, "jump to");
     if lines.is_empty() {
         frame.render_widget(Paragraph::new(Text::styled("no match", DIM)), inner);
     } else {
+        record_list(app, inner, scroll_to(at, inner.height));
         frame.render_widget(
             Paragraph::new(lines).scroll((scroll_to(at, inner.height), 0)),
             inner,
@@ -672,7 +795,8 @@ fn draw_profiles(frame: &mut Frame, area: Rect, app: &App, at: usize) {
             }
         })
         .collect();
-    let inner = popup(frame, area, 44, lines.len() as u16 + 2, "profile");
+    let inner = popup(frame, app, area, 44, lines.len() as u16 + 2, "profile");
+    record_list(app, inner, scroll_to(at, inner.height));
     frame.render_widget(
         Paragraph::new(lines).scroll((scroll_to(at, inner.height), 0)),
         inner,
@@ -696,7 +820,8 @@ fn draw_relations(frame: &mut Frame, area: Rect, app: &App, at: usize) {
             Line::from(spans).style(line.style)
         })
         .collect();
-    let inner = popup(frame, area, 96, lines.len() as u16 + 2, "go to");
+    let inner = popup(frame, app, area, 96, lines.len() as u16 + 2, "go to");
+    record_list(app, inner, scroll_to(at, inner.height));
     frame.render_widget(
         Paragraph::new(lines).scroll((scroll_to(at, inner.height), 0)),
         inner,
@@ -712,7 +837,8 @@ fn draw_regions(frame: &mut Frame, area: Rect, app: &App, at: usize) {
             picker_line(format!("{r}{current}"), i == at)
         })
         .collect();
-    let inner = popup(frame, area, 30, 14, "region");
+    let inner = popup(frame, app, area, 30, 14, "region");
+    record_list(app, inner, scroll_to(at, inner.height));
     frame.render_widget(
         Paragraph::new(lines).scroll((scroll_to(at, inner.height), 0)),
         inner,
@@ -732,11 +858,13 @@ fn draw_settings(frame: &mut Frame, area: Rect, app: &App, at: usize) {
         .collect();
     let inner = popup(
         frame,
+        app,
         area,
         56,
         lines.len() as u16 + 3,
         "settings · enter changes · esc closes",
     );
+    record_list(app, inner, 0);
     let note = Line::styled("  for this session; set them for good in config.toml", DIM);
     frame.render_widget(
         Paragraph::new(lines.into_iter().chain([note]).collect::<Vec<_>>()),
@@ -744,7 +872,7 @@ fn draw_settings(frame: &mut Frame, area: Rect, app: &App, at: usize) {
     );
 }
 
-fn draw_help(frame: &mut Frame, area: Rect) {
+fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
     const KEYS: &[(&str, &str)] = &[
         (":", "jump to a resource type (:q quits)"),
         ("/", "filter the list"),
@@ -769,6 +897,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         .collect();
     let inner = popup(
         frame,
+        app,
         area,
         54,
         lines.len() as u16 + 2,
@@ -806,6 +935,133 @@ mod tests {
                 arn: "arn:aws:sts::123456789012:assumed-role/Dev/me".into(),
             }),
         });
+    }
+
+    use ratatui::crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    fn mouse(app: &mut App, kind: MouseEventKind, x: u16, y: u16) {
+        app.handle_mouse(MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        });
+    }
+
+    fn click(app: &mut App, x: u16, y: u16) {
+        mouse(app, MouseEventKind::Down(MouseButton::Left), x, y);
+    }
+
+    /// Draws a frame so the app knows where things are, and returns it.
+    fn draw_frame(app: &App) -> ratatui::buffer::Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(64, 12)).unwrap();
+        terminal.draw(|f| draw(f, app)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    #[test]
+    fn clicking_a_row_selects_it_and_a_second_click_opens_it() {
+        let mut app = app();
+        ready(&mut app);
+        draw_frame(&app);
+        let table = app.hits.borrow().table;
+        assert!(app.list.visible_rows().len() > 1);
+        click(&mut app, table.x + 3, table.y + 1);
+        assert_eq!(app.list.selected_index(), Some(1));
+        assert!(matches!(app.screen, Screen::List));
+        click(&mut app, table.x + 3, table.y + 1);
+        assert!(!matches!(app.screen, Screen::List) || !app.back.is_empty());
+    }
+
+    #[test]
+    fn hover_marks_the_row_under_the_pointer_but_not_the_selected_one() {
+        let mut app = app();
+        ready(&mut app);
+        draw_frame(&app);
+        let table = app.hits.borrow().table;
+        mouse(&mut app, MouseEventKind::Moved, table.x + 3, table.y + 1);
+        let buf = draw_frame(&app);
+        assert_eq!(buf[(table.x + 3, table.y + 1)].bg, Color::Indexed(235));
+        assert_ne!(buf[(table.x + 3, table.y)].bg, Color::Indexed(235));
+        // Moving onto the selected row leaves its own highlight.
+        mouse(&mut app, MouseEventKind::Moved, table.x + 3, table.y);
+        let buf = draw_frame(&app);
+        assert_ne!(buf[(table.x + 3, table.y)].bg, Color::Indexed(235));
+    }
+
+    #[test]
+    fn the_wheel_moves_the_selection_and_clicks_ignore_empty_space() {
+        let mut app = app();
+        ready(&mut app);
+        draw_frame(&app);
+        let table = app.hits.borrow().table;
+        mouse(&mut app, MouseEventKind::ScrollDown, table.x, table.y);
+        assert_eq!(
+            app.list.selected_index(),
+            Some(3.min(app.list.visible_rows().len() - 1))
+        );
+        mouse(&mut app, MouseEventKind::ScrollUp, table.x, table.y);
+        assert_eq!(app.list.selected_index(), Some(0));
+        let below = table.y + app.list.visible_rows().len() as u16 + 1;
+        click(&mut app, table.x, below);
+        assert_eq!(app.list.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn clicking_header_labels_opens_their_pickers() {
+        let mut app = app();
+        ready(&mut app);
+        draw_frame(&app);
+        let region = app
+            .hits
+            .borrow()
+            .zones
+            .iter()
+            .find(|(_, k)| *k == KeyCode::Char('R'))
+            .map(|(r, _)| *r)
+            .unwrap();
+        click(&mut app, region.x, region.y);
+        assert!(matches!(app.overlay, Overlay::Regions(_)));
+    }
+
+    #[test]
+    fn a_click_on_a_popup_item_chooses_it_and_outside_closes() {
+        let mut app = app();
+        ready(&mut app);
+        press(&mut app, KeyCode::Char('R'));
+        draw_frame(&app);
+        let (list, popup) = {
+            let h = app.hits.borrow();
+            (h.list, h.popup.unwrap())
+        };
+        click(&mut app, list.x + 2, list.y + 2);
+        assert_eq!(app.region, REGIONS[2]);
+        assert_eq!(app.overlay, Overlay::None);
+        press(&mut app, KeyCode::Char('R'));
+        draw_frame(&app);
+        assert!(popup.x > 0);
+        click(&mut app, 0, 5);
+        assert_eq!(app.overlay, Overlay::None);
+        assert_eq!(app.region, REGIONS[2]);
+    }
+
+    #[test]
+    fn footer_hints_are_clickable_and_right_click_goes_back() {
+        let mut app = app();
+        ready(&mut app);
+        draw_frame(&app);
+        let filter = app
+            .hits
+            .borrow()
+            .zones
+            .iter()
+            .find(|(_, k)| *k == KeyCode::Char('/'))
+            .map(|(r, _)| *r)
+            .unwrap();
+        click(&mut app, filter.x, filter.y);
+        assert_eq!(app.overlay, Overlay::Filter);
+        mouse(&mut app, MouseEventKind::Down(MouseButton::Right), 0, 5);
+        assert_eq!(app.overlay, Overlay::None);
     }
 
     #[test]

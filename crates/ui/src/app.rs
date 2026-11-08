@@ -14,6 +14,9 @@ use fast_aws_core::{
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+mod mouse;
+pub use mouse::Hits;
+
 use crate::cache::{Cache, CacheKey};
 use crate::detail::{DetailState, DetailView};
 use crate::list::{ListView, LoadStatus};
@@ -208,6 +211,11 @@ pub struct App {
     /// What the open `g` menu lists: the row's own relations, then reverse ones
     /// found in cached lists.
     pub relations_menu: Vec<Relation>,
+    /// Where the last frame put things clickable; written by the renderer.
+    pub hits: std::cell::RefCell<Hits>,
+    /// The mouse pointer's last position, for hover highlights.
+    pub mouse_pos: Option<(u16, u16)>,
+    last_click: Option<(Instant, usize)>,
     cache: Cache,
     metrics_enabled: bool,
     sparks: HashMap<SparkKey, Spark>,
@@ -243,6 +251,9 @@ impl App {
             display: Display::default(),
             cache: Cache::default(),
             relations_menu: Vec::new(),
+            hits: Default::default(),
+            mouse_pos: None,
+            last_click: None,
             metrics_enabled: false,
             sparks: HashMap::new(),
             config: Config::default(),
@@ -398,6 +409,11 @@ impl App {
     }
 
     /// Turns sparkline fetching on (the binary does, unless `--no-metrics`).
+    /// Whether the config wants mouse support.
+    pub fn mouse_enabled(&self) -> bool {
+        self.config.mouse
+    }
+
     pub fn set_metrics(&mut self, enabled: bool) {
         self.metrics_enabled = enabled;
     }

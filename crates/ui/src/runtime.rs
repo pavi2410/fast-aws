@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use fast_aws_core::metrics::MetricSource;
 use fast_aws_core::{ConfigFactory, Ctx, ListQuery, Parent, ResourceKind, Scope, caller_identity};
-use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
+};
 use ratatui::crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 use ratatui::crossterm::{ExecutableCommand, cursor};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -20,6 +22,7 @@ use crate::render;
 
 enum Input {
     Key(event::KeyEvent),
+    Mouse(event::MouseEvent),
     Redraw,
     Msg(Msg),
 }
@@ -32,6 +35,10 @@ pub async fn run(
     metrics: Option<Arc<dyn MetricSource>>,
 ) -> io::Result<()> {
     let mut terminal = ratatui::try_init()?;
+    let mouse = app.mouse_enabled();
+    if mouse {
+        capture_mouse(true);
+    }
     let (tx, mut rx) = unbounded_channel();
     let input = InputThread::spawn(tx.clone());
     let mut loads = JoinSet::new();
@@ -89,9 +96,13 @@ pub async fn run(
                 }
                 Effect::RunInTerminal(command) => {
                     input.pause();
+                    capture_mouse(false);
                     ratatui::restore();
                     let success = run_command(&command).await;
                     resume_terminal(&mut terminal)?;
+                    if mouse {
+                        capture_mouse(true);
+                    }
                     input.resume();
                     pending.extend(app.handle_msg(Msg::TerminalCommandFinished { success }));
                 }
@@ -103,7 +114,11 @@ pub async fn run(
 
         terminal.draw(|f| render::draw(f, &app))?;
         pending = match rx.recv().await {
-            Some(Input::Key(key)) => app.handle_key(key),
+            Some(Input::Key(key)) => {
+                app.mouse_pos = None;
+                app.handle_key(key)
+            }
+            Some(Input::Mouse(event)) => app.handle_mouse(event),
             Some(Input::Msg(msg)) => app.handle_msg(msg),
             Some(Input::Redraw) => Vec::new(),
             None => break,
@@ -117,6 +132,7 @@ pub async fn run(
         task.abort();
     }
     input.stop();
+    capture_mouse(false);
     ratatui::restore();
     Ok(())
 }
@@ -263,6 +279,31 @@ async fn run_command(command: &[String]) -> bool {
 }
 
 /// Re-enters the TUI after [`run_command`], without installing another panic hook.
+/// Turns mouse reporting on or off. Off is safe to repeat; it also runs from a
+/// panic hook so a crash doesn't leave the shell printing escape codes.
+fn capture_mouse(on: bool) {
+    let mut out = io::stdout();
+    let _ = if on {
+        out.execute(EnableMouseCapture).map(drop)
+    } else {
+        out.execute(DisableMouseCapture).map(drop)
+    };
+    static HOOK: std::sync::Once = std::sync::Once::new();
+    if on {
+        HOOK.call_once(install_panic_hook);
+    }
+}
+
+fn install_panic_hook() {
+    {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = io::stdout().execute(DisableMouseCapture);
+            previous(info);
+        }));
+    }
+}
+
 fn resume_terminal(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
     enable_raw_mode()?;
     io::stdout()
@@ -301,6 +342,7 @@ impl InputThread {
                 }
                 let input = match event::read() {
                     Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => Input::Key(key),
+                    Ok(Event::Mouse(mouse)) => Input::Mouse(mouse),
                     Ok(Event::Resize(..)) => Input::Redraw,
                     _ => continue,
                 };

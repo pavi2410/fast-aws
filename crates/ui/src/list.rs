@@ -191,6 +191,13 @@ impl ListView {
         self.selected = self.selected.saturating_add_signed(delta).min(last);
     }
 
+    /// Puts the cursor on visible row `index` (ignored past the end).
+    pub fn select(&mut self, index: usize) {
+        if index < self.visible.len() {
+            self.selected = index;
+        }
+    }
+
     pub fn select_first(&mut self) {
         self.selected = 0;
     }

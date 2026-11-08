@@ -6,6 +6,7 @@
 //! metrics = true               # sparklines (GetMetricData is billed per metric)
 //! sparkline = "bars"           # or "dots" (the default)
 //! borders = false              # drop the frames around lists and details (on by default)
+//! mouse = false                # leave the terminal's text selection alone (on by default)
 //! timezone = "utc"             # or "local" (the default); Z switches in the app
 //!
 //! [profiles.generex-qa-ro]
@@ -36,8 +37,12 @@ pub struct Config {
     #[serde(default)]
     pub sparkline: crate::metrics::SparkStyle,
     /// Draw lists and details inside a frame (on by default).
-    #[serde(default = "default_borders")]
+    #[serde(default = "default_true")]
     pub borders: bool,
+    /// Mouse support: click, hover, scroll. On by default; off leaves the
+    /// terminal's own text selection alone.
+    #[serde(default = "default_true")]
+    pub mouse: bool,
     /// Show timestamps in `"local"` time (the default) or `"utc"`; `Z` in the
     /// app switches.
     #[serde(default)]
@@ -46,7 +51,7 @@ pub struct Config {
     pub profiles: HashMap<String, ProfileConfig>,
 }
 
-fn default_borders() -> bool {
+fn default_true() -> bool {
     true
 }
 
@@ -56,7 +61,8 @@ impl Default for Config {
             read_only: false,
             metrics: None,
             sparkline: Default::default(),
-            borders: default_borders(),
+            borders: default_true(),
+            mouse: true,
             timezone: Default::default(),
             profiles: HashMap::new(),
         }

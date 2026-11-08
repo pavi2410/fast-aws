@@ -42,6 +42,7 @@ need an MFA code aren't supported yet.
 | `Z` | Times in local time / UTC |
 | `,` | Settings for this session: borders, sparkline style, times, sparklines on/off |
 | `Esc`, `q` | Back; `q` quits from the top · `Ctrl-C` quits |
+| mouse | Click selects a row, double-click opens it; click the profile, region or time-zone label, a footer hint, or the title (back); hover highlights; wheel scrolls; right-click goes back. In pickers a click chooses, a click outside closes. Hold Shift (Option in some terminals) to select text. |
 | `?` | Help |
 
 Some rows have keys of their own, shown at the left of the footer:
@@ -102,6 +103,7 @@ read_only = true          # every profile (or --read-only)
 metrics = true            # sparklines; billed (or --metrics)
 sparkline = "bars"        # or "dots" (the default)
 borders = false           # drop the frames around lists and details (on by default)
+mouse = false             # no mouse support, so the terminal selects text (on by default)
 timezone = "utc"          # or "local" (the default); Z switches in the app
 
 [profiles.my-readonly-profile]
