@@ -83,7 +83,7 @@ today.
 | EventBridge | Buses → rules, Scheduler schedules |
 | Cognito | User pools → users, identity pools |
 | SES | Account status (sandbox, quota), identities |
-| Cost Explorer | Month-to-date cost by service (**billed**) |
+| Cost Explorer | Month-to-date cost by service, before credits and refunds, which are listed apart with the total after them (**billed**) |
 
 ## Costs and data access
 

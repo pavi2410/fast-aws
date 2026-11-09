@@ -1,5 +1,9 @@
 //! Cost Explorer: month-to-date cost by service.
 //!
+//! Amounts are what was actually used: credits and refunds, which Cost Explorer
+//! counts as negative cost (so a fully credited account shows $0), are left
+//! out of the services and the total and shown apart.
+//!
 //! Cost Explorer charges for every API request (about $0.01). Opening the view
 //! makes exactly one request, nothing refreshes it automatically, and further
 //! result pages are not fetched. The endpoint is in `us-east-1` only.
@@ -23,6 +27,8 @@ pub fn register(registry: &mut fast_aws_core::Registry) {
 }
 
 const METRIC: &str = "UnblendedCost";
+/// `RECORD_TYPE` values that reduce the bill rather than add to it.
+const OFFSETS: [&str; 2] = ["Credit", "Refund"];
 /// Separates the parts of a row ID, which carries the numbers so describe
 /// doesn't need another (billed) request.
 const SEP: char = '\u{1f}';
@@ -65,7 +71,7 @@ impl ResourceKind for CostByService {
             "Share": parts.next(),
             "Period": parts.next(),
             "Metric": METRIC,
-            "Note": "Amounts for the current day are partial and the last few days can still change.",
+            "Note": "Amounts are before credits and refunds, which are listed apart. The current day is partial and the last few days can still change.",
         });
         Ok(Detail {
             raw: format!("{fields:#}"),
@@ -93,6 +99,13 @@ async fn list(client: &Client, start: &str, end: &str) -> Result<Page, AwsError>
                 .key("SERVICE")
                 .build(),
         )
+        // The same request, split by charge type, so credits can be told apart.
+        .group_by(
+            GroupDefinition::builder()
+                .r#type(GroupDefinitionType::Dimension)
+                .key("RECORD_TYPE")
+                .build(),
+        )
         .send()
         .await
         .map_err(AwsError::from_sdk)?;
@@ -108,6 +121,8 @@ fn build_error(e: impl std::fmt::Display) -> AwsError {
 
 fn rows(results: &[ResultByTime], period: &str) -> Vec<Row> {
     let mut by_service: HashMap<String, f64> = HashMap::new();
+    // Credits and refunds, as the negative amounts Cost Explorer reports them.
+    let mut credits = 0.0;
     let mut unit = String::from("USD");
     let mut estimated = false;
     for result in results {
@@ -124,7 +139,12 @@ fn rows(results: &[ResultByTime], period: &str) -> Vec<Row> {
                 unit = u.to_owned();
             }
             let service = group.keys().first().cloned().unwrap_or_default();
-            *by_service.entry(service).or_default() += amount;
+            let charge = group.keys().get(1).map(String::as_str).unwrap_or_default();
+            if OFFSETS.contains(&charge) {
+                credits += amount;
+            } else {
+                *by_service.entry(service).or_default() += amount;
+            }
         }
     }
     let total: f64 = by_service.values().sum();
@@ -136,7 +156,11 @@ fn rows(results: &[ResultByTime], period: &str) -> Vec<Row> {
 
     let money = |a: f64| {
         if unit == "USD" {
-            format!("${a:.2}")
+            if a < 0.0 {
+                format!("-${:.2}", -a)
+            } else {
+                format!("${a:.2}")
+            }
         } else {
             format!("{a:.2} {unit}")
         }
@@ -155,6 +179,20 @@ fn rows(results: &[ResultByTime], period: &str) -> Vec<Row> {
             "".into(),
         ],
     )];
+    if credits.abs() >= 0.005 {
+        let after = total + credits;
+        for (label, amount) in [("Credits & refunds", credits), ("AFTER CREDITS", after)] {
+            rows.push(Row::new(
+                format!("{label}{SEP}{}{SEP}-{SEP}{period}", money(amount)),
+                vec![
+                    Cell::toned(label, Tone::Dim),
+                    Cell::toned(money(amount), Tone::Dim),
+                    "".into(),
+                    "".into(),
+                ],
+            ));
+        }
+    }
     rows.extend(services.into_iter().map(|(service, amount)| {
         let share = if total > 0.0 {
             amount / total * 100.0
@@ -264,8 +302,13 @@ mod tests {
     }
 
     fn group(service: &str, amount: &str) -> Group {
+        charge(service, "Usage", amount)
+    }
+
+    fn charge(service: &str, record_type: &str, amount: &str) -> Group {
         Group::builder()
             .keys(service)
+            .keys(record_type)
             .metrics(
                 METRIC,
                 MetricValue::builder().amount(amount).unit("USD").build(),
@@ -280,6 +323,7 @@ mod tests {
                 r.time_period()
                     .is_some_and(|p| p.start() == "2026-10-01" && p.end() == "2026-10-14")
                     && r.group_by().first().and_then(|g| g.key()) == Some("SERVICE")
+                    && r.group_by().get(1).and_then(|g| g.key()) == Some("RECORD_TYPE")
             })
             .then_output(|| {
                 GetCostAndUsageOutput::builder()
@@ -303,5 +347,40 @@ mod tests {
         assert_eq!(page.rows[0].cells[1].text, "$100.00");
         assert_eq!(page.rows[1].cells[2].text, "75%");
         assert_eq!(rule.num_calls(), 1);
+    }
+
+    #[test]
+    fn credits_are_reported_apart_not_netted_into_the_spend() {
+        let results = [ResultByTime::builder()
+            .groups(charge("Amazon EC2", "Usage", "80"))
+            .groups(charge("Amazon EC2", "Credit", "-80"))
+            .groups(charge("AWS Lambda", "Usage", "20"))
+            .groups(charge("AWS Lambda", "Refund", "-5"))
+            .groups(charge("Tax", "Tax", "10"))
+            .build()];
+        let rows = rows(&results, "p");
+        let table: Vec<(&str, &str)> = rows
+            .iter()
+            .map(|r| (r.cells[0].text.as_str(), r.cells[1].text.as_str()))
+            .collect();
+        assert_eq!(
+            table,
+            [
+                ("TOTAL", "$110.00"),
+                ("Credits & refunds", "-$85.00"),
+                ("AFTER CREDITS", "$25.00"),
+                ("Amazon EC2", "$80.00"),
+                ("AWS Lambda", "$20.00"),
+                ("Tax", "$10.00"),
+            ]
+        );
+    }
+
+    #[test]
+    fn no_credit_rows_when_there_are_none() {
+        let results = [ResultByTime::builder()
+            .groups(group("Amazon EC2", "10"))
+            .build()];
+        assert_eq!(rows(&results, "p").len(), 2);
     }
 }
